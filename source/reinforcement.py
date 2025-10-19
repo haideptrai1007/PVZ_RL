@@ -16,6 +16,8 @@ class PVZ_Reinforcement():
         }
 
         self.Control.setup_states(self.state_dict, c.LEVEL)
+
+        self.plants_obs = np.zeros((5, 9, 8))
         
         with open(filePath) as file:
             self.data = json.load(file)
@@ -40,8 +42,15 @@ class PVZ_Reinforcement():
         for sun in suns:
             self.Control.event_loop((sun.rect.centerx, sun.rect.bottom))
     
-    def get_action_spaces(self):
-        pass
+    # Get Action Space
+    def get_action_space(self):
+        menubar = self.Control.state.menubar
+        cards = menubar.card_list
+        sun = menubar.sun_value
+        curr = menubar.current_time
+        action_space = [int(c.canClick(sun, curr)) for c in cards]
+        print(action_space)
+            
     
     # Observation
     def observe(self):
@@ -58,14 +67,21 @@ class PVZ_Reinforcement():
                 grid = (np.clip(zom.rect.centerx, width[0], width[1]-1) - width[0]) // width[2]
 
                 zombie_obs[i][grid][idx] += 1
-        return zombie_obs
+
+        return np.concatenate((zombie_obs, self.plants_obs), axis=2)
 
     def run(self, speed=1):
         self.initialize(speed)
 
         game_state = level.Level
         Ctrl = self.Control
+
+        time = 0
         while not Ctrl.done and isinstance(Ctrl.state, game_state):
+            if time % 1080:
+                self.get_action_spaces()
+            time += 1
+            
             self.__handleStar()
             self.Control.event_loop()
             self.Control.update()
