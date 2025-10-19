@@ -2,6 +2,6 @@ __author__ = 'marble_xu'
 
 from . import reinforcement
 
-def main():
+def main(speed=1):
     pvz = reinforcement.PVZ_Reinforcement("./source/auto_actions.json")
-    pvz.run(10)
+    pvz.run(speed)

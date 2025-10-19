@@ -50,8 +50,19 @@ class PVZ_Reinforcement():
 
         game_state = level.Level
         Ctrl = self.Control
-        
+        time = 0 
         while not Ctrl.done and isinstance(Ctrl.state, game_state):
+            # if time >= 1080:
+            #     zombiesGrs = Ctrl.state.zombie_groups
+            #     for i in range(len(zombiesGrs)):
+            #         print(f"Rows {i}")
+            #         for zom in zombiesGrs[i]:
+            #             print(zom.rect.centerx)
+            #         print("-"*10)
+            #     time = 0
+            # else:
+            #     time += 1
+
             self.__handleStar()
             self.Control.event_loop()
             self.Control.update()
