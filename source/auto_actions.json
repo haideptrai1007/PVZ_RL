@@ -1,4 +1,5 @@
 {
+    "zombies": ["Zombie", "FlagZombie", "ConeheadZombie", "NewspaperZombie", "BucketheadZombie"],
     "init_actions": [
         [51, 167],  
         [91, 168],  
@@ -20,6 +21,6 @@
         [450, 45],
         [505, 45]
     ],
-    "width": [80, 720, 80],
+    "width": [40, 760, 80],
     "height": [125, 525, 100]
 }
