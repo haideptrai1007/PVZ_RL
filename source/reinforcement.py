@@ -42,7 +42,8 @@ class PVZ_Reinforcement():
     
     def get_action_spaces(self):
         pass
-
+    
+    # Observation
     def observe(self):
         zombies = self.data["zombies"] 
         width = self.data["width"]
@@ -56,7 +57,7 @@ class PVZ_Reinforcement():
                 idx = zombies.index(zom.name)
                 grid = (np.clip(zom.rect.centerx, width[0], width[1]-1) - width[0]) // width[2]
 
-                zombie_obs[i][grid][idx] = 1
+                zombie_obs[i][grid][idx] += 1
         return zombie_obs
 
     def run(self, speed=1):
