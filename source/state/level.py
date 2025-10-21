@@ -208,19 +208,30 @@ class Level(tool.State):
         z.speed = self.speed
         self.zombie_groups[map_y].add(z)
 
-    def canSeedPlant(self):
-        x, y = pg.mouse.get_pos()
+    def canSeedPlant(self, mouse_pos=None):
+        if mouse_pos:
+            x, y = mouse_pos
+        else:
+            x, y = pg.mouse.get_pos()
         return self.map.showPlant(x, y)
         
-    def addPlant(self):
-        pos = self.canSeedPlant()
+    def addPlant(self, mouse_pos=None):
+        pos = self.canSeedPlant(mouse_pos)
+
         if pos is None:
             return
-
+        
         if self.hint_image is None:
             self.setupHintImage()
-        x, y = self.hint_rect.centerx, self.hint_rect.bottom
+
+        if mouse_pos:
+            x, y = mouse_pos
+        else:
+            x, y = self.hint_rect.centerx, self.hint_rect.bottom
+        print(x, y)
+
         map_x, map_y = self.map.getMapIndex(x, y)
+        
         if self.plant_name == c.SUNFLOWER:
             new_plant = plant.SunFlower(x, y, self.sun_group)
         elif self.plant_name == c.PEASHOOTER:
@@ -275,8 +286,8 @@ class Level(tool.State):
         self.removeMouseImage()
         #print('addPlant map[%d,%d], grid pos[%d, %d] pos[%d, %d]' % (map_x, map_y, x, y, pos[0], pos[1]))
 
-    def setupHintImage(self):
-        pos = self.canSeedPlant()
+    def setupHintImage(self, mouse_pos=None):
+        pos = self.canSeedPlant(mouse_pos)
         if pos and self.mouse_image:
             if (self.hint_image and pos[0] == self.hint_rect.x and
                 pos[1] == self.hint_rect.y):

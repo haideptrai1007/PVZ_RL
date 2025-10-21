@@ -21,6 +21,13 @@ class PVZ_Reinforcement():
         
         with open(filePath) as file:
             self.data = json.load(file)
+    
+    # Auto Collect Star
+    def __handleStar(self):
+        suns = self.Control.state.sun_group.sprites()
+        for sun in suns:
+            self.Control.event_loop((sun.rect.centerx, sun.rect.bottom))
+            self.Control.update()
 
     # Auto Pick Cards, Play Game and Control Speed Game
     def initialize(self, speed):
@@ -36,12 +43,6 @@ class PVZ_Reinforcement():
         self.state_dict[c.LEVEL].speed = speed
         self.Control.fps = 60*speed
 
-    # Auto Collect Star
-    def __handleStar(self):
-        suns = self.Control.state.sun_group.sprites()
-        for sun in suns:
-            self.Control.event_loop((sun.rect.centerx, sun.rect.bottom))
-    
     # Get Action Space
     def valid_action_space(self):
         menubar = self.Control.state.menubar
@@ -51,10 +52,19 @@ class PVZ_Reinforcement():
         action_space = [int(c.canClick(sun, curr)) for c in cards]
         return action_space
     
+    # Run an action
     def step(self, plantId, gridId):
-        pass
+        actions = self.data["actions"]
+        w = self.data["width"]
+        h = self.data["height"]
 
-            
+        Ctrl = self.Control
+
+        x = int(w[0] + (gridId[0] + 0.5)*w[2]) 
+        y = int(h[0] + (gridId[1] + 0.5)*h[2])
+
+        Ctrl.state.update(surface=Ctrl.screen, current_time=Ctrl.current_time, mouse_pos=tuple(actions[plantId]), mouse_click=[True, False])
+        Ctrl.state.addPlant((x, y))
     
     # Observation
     def observe(self):
@@ -74,23 +84,26 @@ class PVZ_Reinforcement():
 
         return np.concatenate((zombie_obs, self.plants_obs), axis=2)
 
+    # Run
     def run(self, speed=1):
         self.initialize(speed)
 
         game_state = level.Level
         Ctrl = self.Control
 
-        time = 0
+        count = 1
         while not Ctrl.done and isinstance(Ctrl.state, game_state):
-            if time % 1080:
-                self.valid_action_space()
-            time += 1
-            
-            self.__handleStar()
-            self.Control.event_loop()
-            self.Control.update()
+            Ctrl.update()
+
+            if (pg.time.get_ticks() + 1) >= (10000000000 / speed)*count: # Underdeveloped
+                pass
+            else:
+                self.__handleStar()
+
+            Ctrl.event_loop()
+            Ctrl.update()
             pg.display.update()
-            self.Control.clock.tick(self.Control.fps)
+            Ctrl.clock.tick(self.Control.fps)
 
 
         if isinstance(Ctrl.state, screen.GameLoseScreen):
