@@ -43,13 +43,17 @@ class PVZ_Reinforcement():
             self.Control.event_loop((sun.rect.centerx, sun.rect.bottom))
     
     # Get Action Space
-    def get_action_space(self):
+    def valid_action_space(self):
         menubar = self.Control.state.menubar
         cards = menubar.card_list
         sun = menubar.sun_value
         curr = menubar.current_time
         action_space = [int(c.canClick(sun, curr)) for c in cards]
-        print(action_space)
+        return action_space
+    
+    def step(self, plantId, gridId):
+        pass
+
             
     
     # Observation
@@ -79,7 +83,7 @@ class PVZ_Reinforcement():
         time = 0
         while not Ctrl.done and isinstance(Ctrl.state, game_state):
             if time % 1080:
-                self.get_action_spaces()
+                self.valid_action_space()
             time += 1
             
             self.__handleStar()
