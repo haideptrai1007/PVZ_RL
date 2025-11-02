@@ -206,8 +206,8 @@ class PPOAgent:
             plant_action, grid_action, plant_log_prob, grid_log_prob, value = self.policy.get_action([grid_state.unsqueeze(0), context_state.unsqueeze(0)], gridMask)
 
         self.buffer.add(
-            grid_state,
-            context_state,
+            grid_state.cpu().numpy(),
+            context_state.cpu().numpy(),
             plant_action.cpu().numpy()[0],
             grid_action.cpu().numpy()[0],
             plant_log_prob.cpu().numpy()[0],
