@@ -199,9 +199,9 @@ class PVZ_Reinforcement():
                     gridMask = self.__get_valid_grid()
 
                     # Reward
-                    if self.total_sun_reward > currSun:
-                        reward += self.total_sun_reward - currSun
-                        currSun = self.total_sun_reward*2
+                    # if self.total_sun_reward > currSun:
+                    #     reward += self.total_sun_reward - currSun
+                    #     currSun = self.total_sun_reward*2
 
                     newZom = self.__checkZombie()
                     if currZom > newZom:
@@ -218,8 +218,8 @@ class PVZ_Reinforcement():
                     if plant_action != 0:
                         reward -= 5
 
-                    if plant_action == 1:
-                        reward -= 2
+                    # if plant_action == 1:
+                    #     reward -= 2
 
                     curr_state = next_state
                     reward = reward - old_reward
