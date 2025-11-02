@@ -154,8 +154,10 @@ class PVZ_Reinforcement():
         return [grid_state, context_state]
 
     # Run
-    def run(self, speed=1, loops=1, update_frequency=20):
+    def run(self, speed=1, loops=1, update_frequency=10, checkpoint=None):
         agent = PPO.PPOAgent()
+        if checkpoint:
+            agent.load(checkpoint)
 
         episode_rewards = []
         episode_lengths = []
@@ -199,13 +201,13 @@ class PVZ_Reinforcement():
                     # Reward
                     if self.total_sun_reward > currSun:
                         reward += self.total_sun_reward - currSun
-                        currSun = self.total_sun_reward
+                        currSun = self.total_sun_reward*2
 
                     newZom = self.__checkZombie()
                     if currZom > newZom:
                         zomkill = currZom - newZom
                         episode_zombie_killed += zomkill
-                        reward += zomkill * 20
+                        reward += zomkill * 100
                         currZom = newZom
 
                     plant_action, grid_action = agent.select_action(curr_state, gridMask)
@@ -214,9 +216,10 @@ class PVZ_Reinforcement():
                         next_state = self.totalObserve()
 
                     if plant_action != 0:
-                        reward -= 3
-                    elif plant_action == 1:
                         reward -= 5
+
+                    if plant_action == 1:
+                        reward -= 2
 
                     curr_state = next_state
                     reward = reward - old_reward
@@ -235,11 +238,11 @@ class PVZ_Reinforcement():
                 Ctrl.clock.tick(self.Control.fps)
                 
             if isinstance(Ctrl.state, screen.GameLoseScreen):
-                agent.store_reward_and_done(prev[0] - 200, True)
-                episode_reward -= 200
+                agent.store_reward_and_done(prev[0] - 1000, True)
+                episode_reward -= 1000
             else:
-                agent.store_reward_and_done(prev[0] + 200, True)
-                episode_reward += 200
+                agent.store_reward_and_done(prev[0] + 1000, True)
+                episode_reward += 1000
             
             episode_rewards.append(episode_reward)
             episode_lengths.append(episode_length)
