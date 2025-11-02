@@ -207,7 +207,7 @@ class PVZ_Reinforcement():
                     if currZom > newZom:
                         zomkill = currZom - newZom
                         episode_zombie_killed += zomkill
-                        reward += zomkill * 100
+                        reward += zomkill * 1
                         currZom = newZom
                         print(zomkill)
                     plant_action, grid_action = agent.select_action(curr_state, gridMask)
@@ -233,11 +233,11 @@ class PVZ_Reinforcement():
                 Ctrl.clock.tick(self.Control.fps)
                 
             if isinstance(Ctrl.state, screen.GameLoseScreen):
-                agent.store_reward_and_done(prev[0] - 1000, True)
-                episode_reward -= 1000
+                agent.store_reward_and_done(prev[0] - 10, True)
+                episode_reward -= 10
             else:
-                agent.store_reward_and_done(prev[0] + 1000, True)
-                episode_reward += 1000
+                agent.store_reward_and_done(prev[0] + 10, True)
+                episode_reward += 10
             
             episode_rewards.append(episode_reward)
             episode_lengths.append(episode_length)
