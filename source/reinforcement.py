@@ -199,12 +199,13 @@ class PVZ_Reinforcement():
                         currZom = newZom
 
                     plant_action, grid_action = agent.select_action(curr_state, gridMask)
-                    self.step(plant_action, grid_action)
+                    if (isinstance(Ctrl.state, game_state)):
+                        self.step(plant_action, grid_action)
+                        next_state = self.totalObserve()
 
                     if plant_action != 1:
                         reward -= 1
-
-                    next_state = self.totalObserve()
+                        
                     curr_state = next_state
                     reward = reward - old_reward
                     old_reward = reward
