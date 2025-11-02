@@ -185,7 +185,7 @@ class PPOAgent:
                 gae_lamb=0.95, 
                 eps=0.2, 
                 value_coef=1, 
-                entropy_coef=0.01,
+                entropy_coef=0.1,
                 max_grad_norm=0.5,
                 ppo_epochs=4,
                 mini_batch_size=256):

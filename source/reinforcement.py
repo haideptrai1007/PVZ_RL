@@ -171,8 +171,6 @@ class PVZ_Reinforcement():
             Ctrl = self.Control
 
             currZom = len(Ctrl.state.zombie_list)
-            currSun = 0
-            count = 0
             reward = 0
             old_reward = 0
 
@@ -183,6 +181,8 @@ class PVZ_Reinforcement():
             episode_length = 0
             episode_zombie_killed = 0
 
+            start_time = 0
+
             while not Ctrl.done and isinstance(Ctrl.state, game_state):
                 Ctrl.update()
                 if first:
@@ -190,8 +190,8 @@ class PVZ_Reinforcement():
                     first = False 
 
 
-                if (pg.time.get_ticks()) >= (5000 / speed) * count and isinstance(Ctrl.state, game_state):
-                    count += 1
+                if (pg.time.get_ticks()-start_time) >= (6000 / speed) and isinstance(Ctrl.state, game_state):
+                    start_time = pg.time.get_ticks()
                     if prev:
                         agent.store_reward_and_done(*prev)
                         prev = None
@@ -209,12 +209,12 @@ class PVZ_Reinforcement():
                         episode_zombie_killed += zomkill
                         reward += zomkill * 1
                         currZom = newZom
-                        print(zomkill)
+                    
                     plant_action, grid_action = agent.select_action(curr_state, gridMask)
                     if (isinstance(Ctrl.state, game_state)):
                         self.step(plant_action, grid_action)
                         next_state = self.totalObserve()
-                    
+
 
                     curr_state = next_state
                     reward = reward - old_reward
