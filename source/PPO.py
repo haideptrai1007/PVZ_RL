@@ -277,8 +277,6 @@ class PPOAgent:
         num_updates = 0
 
         for i in range(self.ppo_epochs):
-            print(f"Epoch {i}")
-
             indices = np.arange(len(data["grid_states"]))
             np.random.shuffle(indices)
 

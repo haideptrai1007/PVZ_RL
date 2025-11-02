@@ -26,6 +26,16 @@ class PVZ_Reinforcement():
         
         with open(filePath) as file:
             self.data = json.load(file)
+
+    def reset(self):
+        self.Control = tool.Control()
+        self.state_dict = {
+            c.MAIN_MENU: mainmenu.Menu(),
+            c.GAME_VICTORY: screen.GameVictoryScreen(),
+            c.GAME_LOSE: screen.GameLoseScreen(),
+            c.LEVEL: level.Level()
+        }
+        self.Control.setup_states(self.state_dict, c.LEVEL)
     
     # Auto Collect Star
     def __handleStar(self):
@@ -78,8 +88,8 @@ class PVZ_Reinforcement():
 
         Ctrl.state.update(surface=Ctrl.screen, current_time=Ctrl.current_time, mouse_pos=tuple(actions[plantId]), mouse_click=[True, False])
         Ctrl.state.addPlant((x, y))
-
-        Ctrl.state.menubar.setCardFrozenTime(plants[plantId])
+        if (isinstance(Ctrl.state, level.Level)):
+            Ctrl.state.menubar.setCardFrozenTime(plants[plantId])
 
     
     def __checkZombie(self): 
@@ -151,7 +161,7 @@ class PVZ_Reinforcement():
         zombies_killed_history = []
 
         for episode in range(loops):
-            self.Control.setup_states(self.state_dict, c.LEVEL)
+            self.reset()
             self.initialize(speed)
 
             game_state = level.Level
@@ -177,7 +187,7 @@ class PVZ_Reinforcement():
                     first = False 
 
 
-                if (pg.time.get_ticks()) >= (1250 / speed) * count: # Underdeveloped
+                if (pg.time.get_ticks()) >= (2000 / speed) * count: # Underdeveloped
                     count += 1
                     Ctrl.state.menubar.setCardFrozenTime("cherrybomb")
                     if prev:
@@ -205,7 +215,7 @@ class PVZ_Reinforcement():
 
                     if plant_action != 1:
                         reward -= 1
-                        
+
                     curr_state = next_state
                     reward = reward - old_reward
                     old_reward = reward
@@ -213,8 +223,8 @@ class PVZ_Reinforcement():
 
                     episode_reward += reward
                     episode_length += 1
-
-                elif (isinstance(Ctrl.state, game_state)):
+                elif isinstance(Ctrl.state, game_state):
+                    print(1)
                     self.__handleStar()
 
                 Ctrl.event_loop()
