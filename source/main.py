@@ -1,5 +1,5 @@
 from . import reinforcement
 
-def main():
+def main(speed, loops):
     pvz = reinforcement.PVZ_Reinforcement("./source/auto_actions.json")
-    pvz.run(15, 50)
+    pvz.run(speed, loops)

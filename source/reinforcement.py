@@ -88,9 +88,9 @@ class PVZ_Reinforcement():
 
         Ctrl.state.update(surface=Ctrl.screen, current_time=Ctrl.current_time, mouse_pos=tuple(actions[plantId]), mouse_click=[True, False])
         Ctrl.state.addPlant((x, y))
-        if (isinstance(Ctrl.state, level.Level)):
-            Ctrl.state.menubar.setCardFrozenTime(plants[plantId])
 
+        if isinstance(Ctrl.state, level.Level):
+            Ctrl.state.menubar.setCardFrozenTime(plants[plantId])
     
     def __checkZombie(self): 
         Ctrl = self.Control
@@ -148,12 +148,13 @@ class PVZ_Reinforcement():
 
         sun_val = self.Control.state.menubar.sun_value
         action_space = [1] + self.valid_action_space() + [sun_val]
+        action_space[5] = 0
         context_state = torch.tensor(action_space, dtype=torch.float)
 
         return [grid_state, context_state]
 
     # Run
-    def run(self, speed=1, loops=1, update_frequency=10):
+    def run(self, speed=1, loops=1, update_frequency=20):
         agent = PPO.PPOAgent()
 
         episode_rewards = []
@@ -187,9 +188,8 @@ class PVZ_Reinforcement():
                     first = False 
 
 
-                if (pg.time.get_ticks()) >= (2000 / speed) * count: # Underdeveloped
+                if (pg.time.get_ticks()) >= (5000 / speed) * count and isinstance(Ctrl.state, game_state):
                     count += 1
-                    Ctrl.state.menubar.setCardFrozenTime("cherrybomb")
                     if prev:
                         agent.store_reward_and_done(*prev)
                         prev = None
@@ -205,7 +205,7 @@ class PVZ_Reinforcement():
                     if currZom > newZom:
                         zomkill = currZom - newZom
                         episode_zombie_killed += zomkill
-                        reward += zomkill * 10
+                        reward += zomkill * 20
                         currZom = newZom
 
                     plant_action, grid_action = agent.select_action(curr_state, gridMask)
@@ -213,8 +213,10 @@ class PVZ_Reinforcement():
                         self.step(plant_action, grid_action)
                         next_state = self.totalObserve()
 
-                    if plant_action != 1:
-                        reward -= 1
+                    if plant_action != 0:
+                        reward -= 3
+                    elif plant_action == 1:
+                        reward -= 5
 
                     curr_state = next_state
                     reward = reward - old_reward
@@ -223,8 +225,8 @@ class PVZ_Reinforcement():
 
                     episode_reward += reward
                     episode_length += 1
-                elif isinstance(Ctrl.state, game_state):
-                    print(1)
+                
+                if isinstance(Ctrl.state, game_state):
                     self.__handleStar()
 
                 Ctrl.event_loop()
@@ -233,14 +235,15 @@ class PVZ_Reinforcement():
                 Ctrl.clock.tick(self.Control.fps)
                 
             if isinstance(Ctrl.state, screen.GameLoseScreen):
-                agent.store_reward_and_done(prev[0] - 100, True)
-                episode_reward -= 100
+                agent.store_reward_and_done(prev[0] - 200, True)
+                episode_reward -= 200
             else:
-                agent.store_reward_and_done(prev[0] + 100, True)
-                episode_reward += 100
+                agent.store_reward_and_done(prev[0] + 200, True)
+                episode_reward += 200
             
             episode_rewards.append(episode_reward)
             episode_lengths.append(episode_length)
+            zombies_killed_history.append(episode_zombie_killed)
         
             if (episode + 1) % update_frequency == 0:
                 stats = agent.update()
