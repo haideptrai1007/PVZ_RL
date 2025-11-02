@@ -81,19 +81,18 @@ class ActorCritic(nn.Module):
         actionMask = context_obs[:, :-1]
         
         plant_probs *= actionMask
-        plant_probs /= (plant_probs.sum(dim=-1, keepdim=True) + 1e-8)
+        plant_probs /= (plant_probs.sum(dim=-1, keepdim=True) + 1e-5)
 
         plant_dist = Categorical(plant_probs)
         plant_action = plant_dist.sample()
-        print(plant_probs)
-        print(plant_action)
+
         plant_log_prob = plant_dist.log_prob(plant_action)
 
         _, grid_probs, _ = self.forward(state, plant_action)
 
         if gridMask is not None:
             grid_probs *= gridMask
-            grid_probs /= (grid_probs.sum(dim=-1, keepdim=True) + 1e-8)
+            grid_probs /= (grid_probs.sum(dim=-1, keepdim=True) + 1e-5)
         
         grid_dist = Categorical(grid_probs)
         grid_action = grid_dist.sample()
@@ -118,7 +117,8 @@ class ActorCritic(nn.Module):
     
 class RolloutBuffer:
     def __init__(self):
-        self.states = []
+        self.grid_states = []
+        self.context_states = []
         self.plant_actions = []
         self.grid_actions = []
         self.plant_log_probs = []
@@ -127,8 +127,9 @@ class RolloutBuffer:
         self.values = []
         self.dones = []
     
-    def add(self, state, plant_action, grid_action, plant_log_prob, grid_log_prob, reward, value, done):
-        self.states.append(state)
+    def add(self, grid_state, context_state, plant_action, grid_action, plant_log_prob, grid_log_prob, reward, value, done):
+        self.grid_states.append(grid_state)
+        self.context_states.append(context_state)
         self.plant_actions.append(plant_action)
         self.grid_actions.append(grid_action)
         self.plant_log_probs.append(plant_log_prob)
@@ -139,7 +140,8 @@ class RolloutBuffer:
 
     def get(self):
         return {
-            'states': np.array(self.states),
+            'grid_states': np.array(self.grid_states),
+            "context_states": np.array(self.context_states),
             'plant_actions': np.array(self.plant_actions),
             'grid_actions': np.array(self.grid_actions),
             'plant_log_probs': np.array(self.plant_log_probs),
@@ -150,11 +152,12 @@ class RolloutBuffer:
         }
     
     def clear(self):
-        self.states.clear()
+        self.grid_states.clear()
+        self.context_states.clear
         self.plant_actions.clear()
-        self.position_actions.clear()
+        self.grid_actions.clear()
         self.plant_log_probs.clear()
-        self.position_log_probs.clear()
+        self.grid_log_probs.clear()
         self.rewards.clear()
         self.values.clear()
         self.dones.clear()
@@ -181,7 +184,7 @@ class PPOAgent:
 
         self.gamma = gamma
         self.gae_lambda = gae_lamb
-        self.clip_epsilon = eps
+        self.eps = eps
         self.value_coef = value_coef
         self.entropy_coef = entropy_coef
         self.max_grad_norm = max_grad_norm
@@ -203,7 +206,8 @@ class PPOAgent:
             plant_action, grid_action, plant_log_prob, grid_log_prob, value = self.policy.get_action([grid_state.unsqueeze(0), context_state.unsqueeze(0)], gridMask)
 
         self.buffer.add(
-            state,
+            grid_state,
+            context_state,
             plant_action.cpu().numpy()[0],
             grid_action.cpu().numpy()[0],
             plant_log_prob.cpu().numpy()[0],
@@ -233,7 +237,7 @@ class PPOAgent:
 
             delta = rewards[i] + self.gamma * next_value_t * (1 - dones[i]) - values[i]
 
-            last_gae = delta + self.gamma * self.gae_lamb * (1 - dones[i]) * last_gae
+            last_gae = delta + self.gamma * self.gae_lambda * (1 - dones[i]) * last_gae
             advantages[i] = last_gae
 
         returns = advantages + values
@@ -241,7 +245,7 @@ class PPOAgent:
         return advantages, returns
     
     def update(self, next_state=None):
-        data = self.buffet.get()
+        data = self.buffer.get()
 
         if next_state is not None:
             next_state_tensor = torch.FloatTensor(next_state).unsqueeze(0).to(self.device)
@@ -253,9 +257,13 @@ class PPOAgent:
         
         advantages, returns = self.compute_gae(data["rewards"], data["values"], data["dones"], next_value)
 
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
 
-        states = data["states"]
+        grid_states = data["grid_states"]
+        context_states = data["context_states"]
+
+        grid_states = torch.FloatTensor(grid_states).to(self.device)
+        context_states = torch.FloatTensor(context_states).to(self.device)
         plant_actions = torch.LongTensor(data["plant_actions"]).to(self.device)
         grid_actions = torch.LongTensor(data["grid_actions"]).to(self.device)
         old_plant_log_probs = torch.LongTensor(data["plant_log_probs"]).to(self.device)
@@ -271,14 +279,15 @@ class PPOAgent:
         for i in range(self.ppo_epochs):
             print(f"Epoch {i}")
 
-            indices = np.arange(len(data["states"]))
+            indices = np.arange(len(data["grid_states"]))
             np.random.shuffle(indices)
 
             for start in range(0, len(indices), self.mini_batch_size):
                 end = start + self.mini_batch_size
                 batch_indices = indices[start:end]
 
-                batch_states = states[batch_indices]
+                batch_states = [grid_states[batch_indices], context_states[batch_indices]]
+
                 batch_plant_actions = plant_actions[batch_indices]
                 batch_grid_actions = grid_actions[batch_indices]
                 batch_old_plant_log_probs = old_plant_log_probs[batch_indices]

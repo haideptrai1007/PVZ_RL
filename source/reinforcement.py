@@ -143,14 +143,14 @@ class PVZ_Reinforcement():
         return [grid_state, context_state]
 
     # Run
-    def run(self, speed=1, loops=1):
+    def run(self, speed=1, loops=1, update_frequency=10):
         agent = PPO.PPOAgent()
 
         episode_rewards = []
         episode_lengths = []
         zombies_killed_history = []
 
-        for _ in range(loops):
+        for episode in range(loops):
             self.Control.setup_states(self.state_dict, c.LEVEL)
             self.initialize(speed)
 
@@ -168,6 +168,7 @@ class PVZ_Reinforcement():
 
             episode_reward = 0
             episode_length = 0
+            episode_zombie_killed = 0
 
             while not Ctrl.done and isinstance(Ctrl.state, game_state):
                 Ctrl.update()
@@ -176,8 +177,9 @@ class PVZ_Reinforcement():
                     first = False 
 
 
-                if (pg.time.get_ticks()) >= (1500 / speed) * count: # Underdeveloped
+                if (pg.time.get_ticks()) >= (1250 / speed) * count: # Underdeveloped
                     count += 1
+                    Ctrl.state.menubar.setCardFrozenTime("cherrybomb")
                     if prev:
                         agent.store_reward_and_done(*prev)
                         prev = None
@@ -191,31 +193,25 @@ class PVZ_Reinforcement():
 
                     newZom = self.__checkZombie()
                     if currZom > newZom:
-                        reward += (currZom - newZom)*5
+                        zomkill = currZom - newZom
+                        episode_zombie_killed += zomkill
+                        reward += zomkill * 10
                         currZom = newZom
 
                     plant_action, grid_action = agent.select_action(curr_state, gridMask)
-       
                     self.step(plant_action, grid_action)
 
-                    curr_state = self.totalObserve()
-                    print(curr_state[1])
+                    if plant_action != 1:
+                        reward -= 1
+
+                    next_state = self.totalObserve()
+                    curr_state = next_state
                     reward = reward - old_reward
+                    old_reward = reward
                     prev = [reward, False]
 
                     episode_reward += reward
                     episode_length += 1
-
-
-
-
-
-
-                    
-
-      
-
-
 
                 elif (isinstance(Ctrl.state, game_state)):
                     self.__handleStar()
@@ -234,3 +230,23 @@ class PVZ_Reinforcement():
             
             episode_rewards.append(episode_reward)
             episode_lengths.append(episode_length)
+        
+            if (episode + 1) % update_frequency == 0:
+                stats = agent.update()
+                    
+                avg_reward = np.mean(episode_rewards[-update_frequency:])
+                avg_length = np.mean(episode_lengths[-update_frequency:])
+                avg_zombies = np.mean(zombies_killed_history[-update_frequency:])
+                
+                print(f"Episode {episode + 1}/{loops}")
+                print(f"  Avg Reward (last {update_frequency}): {avg_reward:.2f}")
+                print(f"  Avg Length: {avg_length:.1f}")
+                print(f"  Avg Zombies Killed: {avg_zombies:.1f}")
+                print(f"  Policy Loss: {stats['policy_loss']:.4f}")
+                print(f"  Value Loss: {stats['value_loss']:.4f}")
+                print(f"  Entropy: {stats['entropy']:.4f}")
+                print()
+
+        agent.save("pvz_ppo_trained.pth")
+        print("\nTraining complete!")
+        print(f"Model saved to 'pvz_ppo_trained.pth'")
