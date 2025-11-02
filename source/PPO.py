@@ -8,17 +8,20 @@ import numpy as np
 class GridNet(nn.Module):
     def __init__(self, input_channels=13):
         super().__init__()
-        self.conv1 = nn.Conv2d(input_channels, 32, 3)
-        self.bn1 = nn.BatchNorm2d(32)
+        self.upsample = nn.ConvTranspose2d(input_channels, 32, 
+                                    kernel_size=4, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(32, 64, 3)
+        self.bn1 = nn.BatchNorm2d(64)
 
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((16, 16))
-        self.conv2 = nn.Conv2d(32, 1, kernel_size=1)
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((32, 32))
+        self.conv2 = nn.Conv2d(64, 1, kernel_size=1)
 
     def forward(self, x):
+        x = F.relu(self.upsample(x))  
         x = F.relu(self.bn1(self.conv1(x)))
-        x = self.adaptive_pool(x)
-        x = self.conv2(x)
-        x = x.view(x.size(0), -1)
+        x = self.adaptive_pool(x)  
+        x = self.conv2(x) 
+        x = x.view(x.size(0), -1) 
         return x
     
 
@@ -35,21 +38,27 @@ class ActorCritic(nn.Module):
         self.Net = GridNet()
 
         self.actor_plant = nn.Sequential(
-            nn.Linear(266, 128), # 256(Net) + [9(condition pick plant) + 1(sun_val)] <- context
+            nn.Linear(1034, 512), # 256(Net) + [9(condition pick plant) + 1(sun_val)] <- context
             nn.ReLU(),
-            nn.Linear(128, self.n_plants)
+            nn.Linear(512, 256),
+            nn.GELU(),
+            nn.Linear(256, self.n_plants)
         )
 
         self.actor_grid = nn.Sequential(
-            nn.Linear(265, 128), # 256(Net) + 9(onehot of actor_plant)
+            nn.Linear(1033, 512), # 256(Net) + [9(condition pick plant) + 1(sun_val)] <- context
             nn.ReLU(),
-            nn.Linear(128, self.grid_h*self.grid_w)
+            nn.Linear(512, 256),
+            nn.GELU(),
+            nn.Linear(256, self.grid_h * self.grid_w)
         )
 
         self.critic = nn.Sequential(
-            nn.Linear(266, 128), # Like actor_plant
+            nn.Linear(1034, 512), # 256(Net) + [9(condition pick plant) + 1(sun_val)] <- context
             nn.ReLU(),
-            nn.Linear(128, 1)
+            nn.Linear(512, 256),
+            nn.GELU(),
+            nn.Linear(256, 1)
         )
 
     def forward(self, state, plant_action=None):
@@ -175,11 +184,11 @@ class PPOAgent:
                 gamma=0.9, 
                 gae_lamb=0.95, 
                 eps=0.2, 
-                value_coef=0.5, 
+                value_coef=1, 
                 entropy_coef=0.01,
                 max_grad_norm=0.5,
                 ppo_epochs=4,
-                mini_batch_size=64):
+                mini_batch_size=256):
         
 
         self.gamma = gamma
