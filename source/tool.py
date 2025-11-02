@@ -1,5 +1,3 @@
-__author__ = 'marble_xu'
-
 import os
 import json
 from abc import abstractmethod

@@ -1,6 +1,7 @@
 {
     "zombies": ["Zombie", "FlagZombie", "ConeheadZombie", "NewspaperZombie", "BucketheadZombie"],
-    "plants": ["sunflower", "peashooter", "snowpea", "wallnut", "cherrybomp", "threepeater", "repeaterpea", "chomper"],
+    "plants": ["sunflower", "peashooter", "snowpea", "wallnut", "cherrybomb", "threepeater", "repeaterpea", "chomper"],
+    
     "init_actions": [
         [51, 167],  
         [91, 168],  

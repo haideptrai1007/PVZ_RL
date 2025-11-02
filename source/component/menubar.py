@@ -195,7 +195,7 @@ class MenuBar():
 
     def setCardFrozenTime(self, plant_name):
         for card in self.card_list:
-            if plant_name_list[card.name_index] == plant_name:
+            if plant_name_list[card.name_index].lower() == plant_name:
                 card.setFrozenTime(self.current_time)
                 break
 

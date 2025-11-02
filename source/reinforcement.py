@@ -1,10 +1,12 @@
-from . import tool, constants as c
+from . import tool,  constants as c
 from .state import mainmenu, screen, level
 
 import json
 import pygame as pg
 import numpy as np
 
+from . import PPO
+import torch
 
 class PVZ_Reinforcement():
     def __init__(self, filePath):
@@ -20,7 +22,7 @@ class PVZ_Reinforcement():
 
         self.Control.setup_states(self.state_dict, c.LEVEL)
 
-        self.plants_obs = np.zeros((5, 9))
+        self.plants_obs = np.ones(45)
         
         with open(filePath) as file:
             self.data = json.load(file)
@@ -58,17 +60,27 @@ class PVZ_Reinforcement():
     
     # Run an action
     def step(self, plantId, gridId: list):
+        if int(plantId) <= 0:
+            return
+        plantId -= 1
+        plants = self.data["plants"]
         actions = self.data["actions"]
         w = self.data["width"]
         h = self.data["height"]
 
         Ctrl = self.Control
 
-        x = int(w[0] + (gridId[0] + 0.5)*w[2]) 
-        y = int(h[0] + (gridId[1] + 0.5)*h[2])
+        g1 = gridId % 9
+        g2 = gridId // 9
+
+        x = int(w[0] + (g1 + 0.5)*w[2]) 
+        y = int(h[0] + (g2 + 0.5)*h[2])
 
         Ctrl.state.update(surface=Ctrl.screen, current_time=Ctrl.current_time, mouse_pos=tuple(actions[plantId]), mouse_click=[True, False])
         Ctrl.state.addPlant((x, y))
+
+        Ctrl.state.menubar.setCardFrozenTime(plants[plantId])
+
     
     def __checkZombie(self): 
         Ctrl = self.Control
@@ -79,8 +91,19 @@ class PVZ_Reinforcement():
         for i in Ctrl.state.zombie_groups:
             onMap += len(i)        
         return onPending + onMap
+    
+    def __get_valid_grid(self):
+        width = self.data["width"]
 
-     
+        plantsGrs = self.Control.state.plant_groups
+        matrix = np.ones((5, 9))
+        for i in range(len(plantsGrs)):
+            for p in plantsGrs[i]:
+                grid = (np.clip(p.rect.centerx, width[0], width[1]-15) - width[0]) // width[2]
+                matrix[i, grid] = 0
+        
+        matrix.flatten()
+
     # Observation
     def grid_observe(self):
         zombies = self.data["zombies"] 
@@ -105,66 +128,109 @@ class PVZ_Reinforcement():
             for p in plantsGrs[i]:
                 idx = plants.index(p.name.lower())
                 grid = (np.clip(p.rect.centerx, width[0], width[1]-15) - width[0]) // width[2]
-                plants_obs[i][grid][idx] += 1
+                plants_obs[i][grid][idx] = 1
 
         return np.concatenate((zombie_obs, plants_obs), axis=2)
     
-    def resources_observe(self):
-        Ctrl = self.Control
+    def totalObserve(self):
+        obs = self.grid_observe()
+        grid_state = torch.from_numpy(obs).type(torch.float).reshape(13,5,9)
 
-        sun_val = Ctrl.state.menubar.sun_value
-        curr_time = Ctrl.state.menubar.current_time
-        lst = [i.canClick(sun_val, curr_time) for i in Ctrl.state.menubar.card_list]
+        sun_val = self.Control.state.menubar.sun_value
+        action_space = [1] + self.valid_action_space() + [sun_val]
+        context_state = torch.tensor(action_space, dtype=torch.float)
 
-        return 
+        return [grid_state, context_state]
 
     # Run
-    def run(self, speed=1):
-        self.initialize(speed)
+    def run(self, speed=1, loops=1):
+        agent = PPO.PPOAgent()
 
-        game_state = level.Level
-        Ctrl = self.Control
+        episode_rewards = []
+        episode_lengths = []
+        zombies_killed_history = []
 
-        currZom = len(Ctrl.state.zombie_list)
-        count = 0
-        currSunReward = 0
-        while not Ctrl.done and isinstance(Ctrl.state, game_state):
-            Ctrl.update()
-            if (pg.time.get_ticks()) >= (10000 / speed) * count: # Underdeveloped
-                count += 1
-                reward = 0
-                newZom = self.__checkZombie()
-                if currZom > newZom:
-                    print(currZom - newZom)
-                    currZom = newZom
+        for _ in range(loops):
+            self.Control.setup_states(self.state_dict, c.LEVEL)
+            self.initialize(speed)
 
-                if currSunReward > self.total_sun_reward:
-                    pass        
+            game_state = level.Level
+            Ctrl = self.Control
 
-                # Obs for Plants and Zombies
-                obs = self.grid_observe()
-            
+            currZom = len(Ctrl.state.zombie_list)
+            currSun = 0
+            count = 0
+            reward = 0
+            old_reward = 0
 
+            first = True
+            prev = None
 
-                sun_val = Ctrl.state.menubar.sun_value
-                curr_time = Ctrl.state.menubar.current_time
-                lst = [i.canClick(sun_val, curr_time) for i in Ctrl.state.menubar.card_list]
-                print(lst)
+            episode_reward = 0
+            episode_length = 0
 
-
+            while not Ctrl.done and isinstance(Ctrl.state, game_state):
+                Ctrl.update()
+                if first:
+                    curr_state = self.totalObserve()
+                    first = False 
 
 
+                if (pg.time.get_ticks()) >= (1500 / speed) * count: # Underdeveloped
+                    count += 1
+                    if prev:
+                        agent.store_reward_and_done(*prev)
+                        prev = None
+
+                    gridMask = self.__get_valid_grid()
+
+                    # Reward
+                    if self.total_sun_reward > currSun:
+                        reward += self.total_sun_reward - currSun
+                        currSun = self.total_sun_reward
+
+                    newZom = self.__checkZombie()
+                    if currZom > newZom:
+                        reward += (currZom - newZom)*5
+                        currZom = newZom
+
+                    plant_action, grid_action = agent.select_action(curr_state, gridMask)
+       
+                    self.step(plant_action, grid_action)
+
+                    curr_state = self.totalObserve()
+                    print(curr_state[1])
+                    reward = reward - old_reward
+                    prev = [reward, False]
+
+                    episode_reward += reward
+                    episode_length += 1
+
+
+
+
+
+
+                    
+
+      
+
+
+
+                elif (isinstance(Ctrl.state, game_state)):
+                    self.__handleStar()
+
+                Ctrl.event_loop()
+                Ctrl.update()
+                pg.display.update()
+                Ctrl.clock.tick(self.Control.fps)
+                
+            if isinstance(Ctrl.state, screen.GameLoseScreen):
+                agent.store_reward_and_done(prev[0] - 100, True)
+                episode_reward -= 100
             else:
-                self.__handleStar()
-
-            Ctrl.event_loop()
-            Ctrl.update()
-            pg.display.update()
-            Ctrl.clock.tick(self.Control.fps)
+                agent.store_reward_and_done(prev[0] + 100, True)
+                episode_reward += 100
             
-
-
-        if isinstance(Ctrl.state, screen.GameLoseScreen):
-            print("Game Over")
-        else:
-            print("Game Win")
+            episode_rewards.append(episode_reward)
+            episode_lengths.append(episode_length)
