@@ -227,7 +227,6 @@ class Level(tool.State):
             x, y = mouse_pos
         else:
             x, y = self.hint_rect.centerx, self.hint_rect.bottom
-        print(x, y)
 
         map_x, map_y = self.map.getMapIndex(x, y)
         
