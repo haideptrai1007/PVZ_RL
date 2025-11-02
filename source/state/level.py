@@ -67,7 +67,6 @@ class Level(tool.State):
         self.zombie_list = []
         for data in self.map_data[c.ZOMBIE_LIST]:
             self.zombie_list.append((data['time'] / self.speed, data['name'], data['map_y']))
-        print(self.zombie_list)
         self.zombie_start_time = 0
         self.zombie_list.sort(key=takeTime)
 
