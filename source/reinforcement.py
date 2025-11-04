@@ -161,7 +161,7 @@ class PVZ_Reinforcement():
         return [grid_state, context_state]
 
     # Run
-    def run(self, speed=1, loops=1, update_frequency=10, checkpoint=None, save=True, lr=1e-4, value_coef=0.8, entropy_coef=0.05):
+    def run(self, speed=1, loops=1, update_frequency=10, checkpoint=None, save=True, lr=1e-5, value_coef=0.8, entropy_coef=0.05):
         agent = PPO.PPOAgent(lr=lr, value_coef=value_coef, entropy_coef=entropy_coef)
         if checkpoint:
             agent.load(checkpoint)
@@ -198,7 +198,7 @@ class PVZ_Reinforcement():
                     first = False 
 
 
-                if (pg.time.get_ticks()-start_time) >= (5000 / speed) and isinstance(Ctrl.state, game_state):
+                if (pg.time.get_ticks()-start_time) >= (4000 / speed) and isinstance(Ctrl.state, game_state):
                     start_time = pg.time.get_ticks()
                     if prev:
                         agent.store_reward_and_done(*prev)
@@ -206,22 +206,20 @@ class PVZ_Reinforcement():
 
                     gridMask, totalPlants = self.get_valid_grid(agent.device)
                     if (currPlants - totalPlants) < 0:
-                        reward -= (currPlants + totalPlants)*0.01
+                        reward -= (currPlants + totalPlants)*0.0005
 
                     newZom = self.__checkZombie()
                     if currZom > newZom:
                         zomkill = currZom - newZom
                         episode_zombie_killed += zomkill
-                        reward += zomkill * 0.2
+                        reward += zomkill * 0.5
                         currZom = newZom
                     
                     plant_action, grid_action = agent.select_action(curr_state, gridMask)
                     if (isinstance(Ctrl.state, game_state)):
                         self.step(plant_action, grid_action)
-                        if plant_action != 0:
-                            reward -= 0.01
                         next_state = self.totalObserve()
-                    reward += 0.001
+                    reward += 0.00025
 
 
                     curr_state = next_state
@@ -241,12 +239,12 @@ class PVZ_Reinforcement():
                 Ctrl.clock.tick(self.Control.fps)
                 
             if isinstance(Ctrl.state, screen.GameLoseScreen):
-                agent.store_reward_and_done(prev[0] - 1, True)
-                episode_reward -= 1
+                agent.store_reward_and_done(prev[0] - 2, True)
+                episode_reward -= 2
             else:
-                agent.store_reward_and_done(prev[0] + 1, True)
+                agent.store_reward_and_done(prev[0] + 2, True)
                 print("Win")
-                episode_reward += 1
+                episode_reward += 2
             
             episode_rewards.append(episode_reward)
             episode_lengths.append(episode_length)
@@ -254,6 +252,7 @@ class PVZ_Reinforcement():
         
             if (episode + 1) % update_frequency == 0:
                 stats = agent.update()
+                agent.entropy_coef *= 0.85
                     
                 avg_reward = np.mean(episode_rewards[-update_frequency:])
                 avg_length = np.mean(episode_lengths[-update_frequency:])
