@@ -90,10 +90,10 @@ class Bullet(pg.sprite.Sprite):
         self.current_time = game_info[c.CURRENT_TIME]
         if self.state == c.FLY:
             if self.rect.y != self.dest_y:
-                self.rect.y += self.y_vel
+                self.rect.y += self.y_vel * self.speed
                 if self.y_vel * (self.dest_y - self.rect.y) < 0:
                     self.rect.y = self.dest_y
-            self.rect.x += self.x_vel
+            self.rect.x += self.x_vel * self.speed
             if self.rect.x > c.SCREEN_WIDTH:
                 self.kill()
         elif self.state == c.EXPLODE:

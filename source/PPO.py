@@ -4,6 +4,8 @@ import torch
 from torch.distributions import Categorical
 import torch.optim as optim
 import numpy as np
+import pickle
+
 
 class GridNet(nn.Module):
     def __init__(self, input_channels=13):
@@ -177,7 +179,7 @@ class RolloutBuffer:
             'values': np.array(self.values),
             'dones': np.array(self.dones)
         }
-    
+        
     def clear(self):
         self.grid_states.clear()
         self.context_states.clear
@@ -189,6 +191,14 @@ class RolloutBuffer:
         self.values.clear()
         self.dones.clear()
 
+    def save(self, filename="memory.pkl"):
+        with open(filename, "wb") as f:
+            pickle.dump(self.__dict__, f)
+
+    def load(self, filename="memory.pkl"):
+        with open(filename, "rb") as f:
+            self.__dict__.update(pickle.load(f))
+
     def __len__(self):
         return len(self.rewards)
     
@@ -199,7 +209,7 @@ class PPOAgent:
                 n_plants=9, 
                 n_zoms=5, 
                 lr=3e-4, 
-                gamma=0.9, 
+                gamma=0.99, 
                 gae_lamb=0.95, 
                 eps=0.2, 
                 value_coef=1, 
@@ -271,7 +281,7 @@ class PPOAgent:
         
         return advantages, returns
     
-    def update(self, next_state=None):
+    def update(self, next_state=None, saveBuffer=True):
         data = self.buffer.get()
 
         if next_state is not None:
@@ -283,8 +293,6 @@ class PPOAgent:
             next_value = 0
         
         advantages, returns = self.compute_gae(data["rewards"], data["values"], data["dones"], next_value)
-
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-5)
 
         grid_states = data["grid_states"]
         context_states = data["context_states"]
@@ -348,7 +356,7 @@ class PPOAgent:
 
                 num_updates += 1
 
-
+        self.buffer.save()
         self.buffer.clear()
 
         return {
