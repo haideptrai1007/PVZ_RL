@@ -211,12 +211,12 @@ class PPOAgent:
                 lr=3e-4, 
                 gamma=0.99, 
                 gae_lamb=0.95, 
-                eps=0.2, 
+                eps=0.3, 
                 value_coef=1, 
                 entropy_coef=0.1,
                 max_grad_norm=0.5,
-                ppo_epochs=4,
-                mini_batch_size=256):
+                ppo_epochs=10,
+                mini_batch_size=512):
         
 
         self.gamma = gamma
@@ -324,20 +324,28 @@ class PPOAgent:
                 batch_plant_actions = plant_actions[batch_indices]
                 batch_grid_actions = grid_actions[batch_indices]
                 batch_old_plant_log_probs = old_plant_log_probs[batch_indices]
-                bactch_old_grid_log_probs = old_grid_log_probs[batch_indices]
+                batch_old_grid_log_probs = old_grid_log_probs[batch_indices]
                 batch_advantages = advantages_tensor[batch_indices]
                 batch_returns = returns_tensor[batch_indices]
 
                 new_plant_log_probs, new_grid_log_probs, entropy, values = self.policy.evaluate_actions(batch_states, batch_plant_actions, batch_grid_actions)
 
-                old_log_probs = batch_old_plant_log_probs + bactch_old_grid_log_probs
-                new_log_probs = new_plant_log_probs + new_grid_log_probs
+                ratio_plant = torch.exp(new_plant_log_probs - batch_old_plant_log_probs)
+                ratio_grid = torch.exp(new_grid_log_probs - batch_old_grid_log_probs)
+                print(f"Ratio Plant and Grid: {ratio_grid.mean()} / {ratio_plant.mean()}; {ratio_grid.std()} / {ratio_plant.std()}")
 
-                ratio = torch.exp(new_log_probs - old_log_probs)
+                surr1_plant = ratio_plant * batch_advantages
+                surr2_plant = torch.clamp(ratio_plant, 1 - self.eps, 1 + self.eps) * batch_advantages
+                policy_loss_plant = -torch.min(surr1_plant, surr2_plant).mean()
 
-                surr1 = ratio * batch_advantages
-                surr2 = torch.clamp(ratio, 1.0 - self.eps, 1.0 + self.eps) * batch_advantages
-                policy_loss = -torch.min(surr1, surr2).mean()
+                surr1_grid = ratio_grid * batch_advantages
+                surr2_grid = torch.clamp(ratio_grid, 1 - self.eps, 1 + self.eps) * batch_advantages
+                policy_loss_grid = -torch.min(surr1_grid, surr2_grid).mean()
+
+                policy_loss = (policy_loss_plant + policy_loss_grid) / 2
+
+                batch_advantages = (batch_advantages - batch_advantages.mean()) / (batch_advantages.std() + 1e-8)
+
 
                 value_loss = F.mse_loss(values.squeeze(), batch_returns)
 

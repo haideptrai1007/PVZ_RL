@@ -208,7 +208,7 @@ class PVZ_Reinforcement():
                         break
 
                     if (currPlants - totalPlants) < 0:
-                        reward -= (currPlants + totalPlants)*0.0005
+                        reward -= (currPlants + totalPlants)*0.0001
 
                     newZom = self.__checkZombie()
                     if currZom > newZom:
@@ -245,12 +245,12 @@ class PVZ_Reinforcement():
                 Ctrl.clock.tick(self.Control.fps)
                 
             if isinstance(Ctrl.state, screen.GameLoseScreen):
-                agent.store_reward_and_done(prev[0] - 3, True)
-                episode_reward -= 3
+                agent.store_reward_and_done(prev[0], True)
+                episode_reward -= 0
             else:
-                agent.store_reward_and_done(prev[0] + 3, True)
+                agent.store_reward_and_done(prev[0] + 5, True)
                 print("Win")
-                episode_reward += 3
+                episode_reward += 5
             
             episode_rewards.append(episode_reward)
             episode_lengths.append(episode_length)
@@ -258,7 +258,7 @@ class PVZ_Reinforcement():
         
             if (episode + 1) % update_frequency == 0:
                 stats = agent.update()
-                agent.entropy_coef *= 0.8
+                agent.entropy_coef *= 0.95
                     
                 avg_reward = np.mean(episode_rewards[-update_frequency:])
                 avg_length = np.mean(episode_lengths[-update_frequency:])
