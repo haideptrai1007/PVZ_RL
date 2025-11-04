@@ -108,7 +108,7 @@ class ActorCritic(nn.Module):
         actionMask = context_obs[:, :-1]
         
         plant_probs *= actionMask
-        plant_probs /= (plant_probs.sum(dim=-1, keepdim=True) + 1e-5)
+        plant_probs /= (plant_probs.sum(dim=-1, keepdim=True) + 1e-6)
 
         plant_dist = Categorical(plant_probs)
         plant_action = plant_dist.sample()
@@ -119,7 +119,7 @@ class ActorCritic(nn.Module):
 
         if gridMask is not None:
             grid_probs *= gridMask
-            grid_probs /= (grid_probs.sum(dim=-1, keepdim=True) + 5e-6)
+            grid_probs /= (grid_probs.sum(dim=-1, keepdim=True) + 1e-6)
         
         grid_dist = Categorical(grid_probs)
         grid_action = grid_dist.sample()

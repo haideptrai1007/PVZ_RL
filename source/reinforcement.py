@@ -191,6 +191,8 @@ class PVZ_Reinforcement():
             start_time = 0
             currPlants = 0
 
+            no_action_needed = False
+
             while not Ctrl.done and isinstance(Ctrl.state, game_state) :
                 Ctrl.update()
                 if first:
@@ -198,13 +200,17 @@ class PVZ_Reinforcement():
                     first = False 
 
 
-                if (pg.time.get_ticks()-start_time) >= (4000 / speed) and isinstance(Ctrl.state, game_state):
+                if (pg.time.get_ticks()-start_time) >= (5000 / speed) and isinstance(Ctrl.state, game_state) and not no_action_needed:
                     start_time = pg.time.get_ticks()
+                    gridMask, totalPlants = self.get_valid_grid(agent.device)
+                    if torch.count_nonzero(gridMask) == 0:
+                        no_action_needed = True
+                        break
+
                     if prev:
                         agent.store_reward_and_done(*prev)
                         prev = None
 
-                    gridMask, totalPlants = self.get_valid_grid(agent.device)
                     if (currPlants - totalPlants) < 0:
                         reward -= (currPlants + totalPlants)*0.0005
 
@@ -252,7 +258,7 @@ class PVZ_Reinforcement():
         
             if (episode + 1) % update_frequency == 0:
                 stats = agent.update()
-                agent.entropy_coef *= 0.85
+                agent.entropy_coef *= 0.8
                     
                 avg_reward = np.mean(episode_rewards[-update_frequency:])
                 avg_length = np.mean(episode_lengths[-update_frequency:])
