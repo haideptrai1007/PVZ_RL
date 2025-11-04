@@ -117,8 +117,8 @@ class PVZ_Reinforcement():
         masked = np.zeros((5, 9))
         masked[:, :4] = 1
         matrix *= masked
-
-        return matrix.flatten(), totalPlants
+        matrix = torch.from_numpy(matrix.flatten()).float()
+        return matrix, totalPlants
 
     # Observation
     def grid_observe(self):
