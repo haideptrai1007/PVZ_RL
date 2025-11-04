@@ -102,17 +102,23 @@ class PVZ_Reinforcement():
             onMap += len(i)        
         return onPending + onMap
     
-    def __get_valid_grid(self):
+    def get_valid_grid(self):
         width = self.data["width"]
 
         plantsGrs = self.Control.state.plant_groups
+        totalPlants = 0
         matrix = np.ones((5, 9))
         for i in range(len(plantsGrs)):
             for p in plantsGrs[i]:
                 grid = (np.clip(p.rect.centerx, width[0], width[1]-15) - width[0]) // width[2]
                 matrix[i, grid] = 0
-        
-        matrix.flatten()
+                totalPlants += 1
+
+        masked = np.zeros((5, 9))
+        masked[:, :4] = 1
+        matrix *= masked
+
+        return matrix.flatten(), totalPlants
 
     # Observation
     def grid_observe(self):
@@ -147,15 +153,16 @@ class PVZ_Reinforcement():
         grid_state = torch.from_numpy(obs).type(torch.float).reshape(13,5,9)
 
         sun_val = self.Control.state.menubar.sun_value
-        action_space = [1] + self.valid_action_space() + [sun_val]
-        action_space[5] = 0
-        context_state = torch.tensor(action_space, dtype=torch.float)
+        action_space = [1.0] + self.valid_action_space() + [sun_val]
+        action_space = np.array(action_space, dtype=float)
+        action_space[5:-1] = 0.0
+        context_state = torch.from_numpy(action_space).float()
 
         return [grid_state, context_state]
 
     # Run
-    def run(self, speed=1, loops=1, update_frequency=10, checkpoint=None):
-        agent = PPO.PPOAgent()
+    def run(self, speed=1, loops=1, update_frequency=10, checkpoint=None, save=True, lr=1e-4, value_coef=0.8, entropy_coef=0.05):
+        agent = PPO.PPOAgent(lr=lr, value_coef=value_coef, entropy_coef=entropy_coef)
         if checkpoint:
             agent.load(checkpoint)
 
@@ -182,38 +189,39 @@ class PVZ_Reinforcement():
             episode_zombie_killed = 0
 
             start_time = 0
+            currPlants = 0
 
-            while not Ctrl.done and isinstance(Ctrl.state, game_state):
+            while not Ctrl.done and isinstance(Ctrl.state, game_state) :
                 Ctrl.update()
                 if first:
                     curr_state = self.totalObserve()
                     first = False 
 
 
-                if (pg.time.get_ticks()-start_time) >= (6000 / speed) and isinstance(Ctrl.state, game_state):
+                if (pg.time.get_ticks()-start_time) >= (5000 / speed) and isinstance(Ctrl.state, game_state):
                     start_time = pg.time.get_ticks()
                     if prev:
                         agent.store_reward_and_done(*prev)
                         prev = None
 
-                    gridMask = self.__get_valid_grid()
-
-                    # Reward
-                    # if self.total_sun_reward > currSun:
-                    #     reward += self.total_sun_reward - currSun
-                    #     currSun = self.total_sun_reward*2
+                    gridMask, totalPlants = self.get_valid_grid()
+                    if (currPlants - totalPlants) < 0:
+                        reward -= (currPlants + totalPlants)*0.01
 
                     newZom = self.__checkZombie()
                     if currZom > newZom:
                         zomkill = currZom - newZom
                         episode_zombie_killed += zomkill
-                        reward += zomkill * 1
+                        reward += zomkill * 0.2
                         currZom = newZom
                     
                     plant_action, grid_action = agent.select_action(curr_state, gridMask)
                     if (isinstance(Ctrl.state, game_state)):
                         self.step(plant_action, grid_action)
+                        if plant_action != 0:
+                            reward -= 0.01
                         next_state = self.totalObserve()
+                    reward += 0.001
 
 
                     curr_state = next_state
@@ -233,11 +241,12 @@ class PVZ_Reinforcement():
                 Ctrl.clock.tick(self.Control.fps)
                 
             if isinstance(Ctrl.state, screen.GameLoseScreen):
-                agent.store_reward_and_done(prev[0] - 10, True)
-                episode_reward -= 10
+                agent.store_reward_and_done(prev[0] - 1, True)
+                episode_reward -= 1
             else:
-                agent.store_reward_and_done(prev[0] + 10, True)
-                episode_reward += 10
+                agent.store_reward_and_done(prev[0] + 1, True)
+                print("win")
+                episode_reward += 1
             
             episode_rewards.append(episode_reward)
             episode_lengths.append(episode_length)
@@ -258,7 +267,7 @@ class PVZ_Reinforcement():
                 print(f"  Value Loss: {stats['value_loss']:.4f}")
                 print(f"  Entropy: {stats['entropy']:.4f}")
                 print()
-
-        agent.save("pvz_ppo_trained.pth")
+        if save:
+            agent.save("pvz_ppo_trained.pth")
         print("\nTraining complete!")
         print(f"Model saved to 'pvz_ppo_trained.pth'")

@@ -23,7 +23,20 @@ class GridNet(nn.Module):
         x = self.conv2(x) 
         x = x.view(x.size(0), -1) 
         return x
+
+class Context(nn.Module):
+    def __init__(self, input_channels=10):
+        super().__init__()
+        self.L1 = nn.Linear(input_channels, 32)
+        self.L2 = nn.Linear(32, 64)
+        self.L3 = nn.Linear(64, 128)
     
+    def forward(self, x):
+        x = F.relu(self.L1(x))
+        x = F.relu(self.L2(x))
+        x = F.relu(self.L3(x))
+        
+        return x
 
 class ActorCritic(nn.Module):
     def __init__(self, grid_h=5, grid_w=9, n_plants=9, n_zoms=5):
@@ -36,9 +49,11 @@ class ActorCritic(nn.Module):
 
 
         self.Net = GridNet()
+        self.Context = Context()
+        self.ActionOneHot = Context(n_plants)
 
         self.actor_plant = nn.Sequential(
-            nn.Linear(1034, 512), # 256(Net) + [9(condition pick plant) + 1(sun_val)] <- context
+            nn.Linear(1152, 512), # 1024 (Net) + 128(Context)
             nn.ReLU(),
             nn.Linear(512, 256),
             nn.GELU(),
@@ -46,7 +61,7 @@ class ActorCritic(nn.Module):
         )
 
         self.actor_grid = nn.Sequential(
-            nn.Linear(1033, 512), # 256(Net) + [9(condition pick plant) + 1(sun_val)] <- context
+            nn.Linear(1152, 512),
             nn.ReLU(),
             nn.Linear(512, 256),
             nn.GELU(),
@@ -54,7 +69,7 @@ class ActorCritic(nn.Module):
         )
 
         self.critic = nn.Sequential(
-            nn.Linear(1034, 512), # 256(Net) + [9(condition pick plant) + 1(sun_val)] <- context
+            nn.Linear(1152, 512),
             nn.ReLU(),
             nn.Linear(512, 256),
             nn.GELU(),
@@ -63,10 +78,12 @@ class ActorCritic(nn.Module):
 
     def forward(self, state, plant_action=None):
         grid_obs, context_obs = state
-        # Context_obs -> 8 cond + 1 sun_value
-        ftrs = self.Net(grid_obs)
-        ftrsPlants = torch.cat([ftrs, context_obs], dim=-1)
-        plant_logits = self.actor_plant(ftrsPlants)
+
+        gridFtrs = self.Net(grid_obs)
+        contextFtrs = self.Context(context_obs)
+        ftrs = torch.cat([gridFtrs, contextFtrs], dim=-1)
+
+        plant_logits = self.actor_plant(ftrs)
         plant_probs = F.softmax(plant_logits, dim=-1)
 
         if plant_action is None:
@@ -74,12 +91,13 @@ class ActorCritic(nn.Module):
         else:
             plant_onehot = F.one_hot(plant_action, num_classes=self.n_plants).float()
 
-        ftrsGrid = torch.cat([ftrs, plant_onehot], dim=-1)
+        actionFtrs = self.ActionOneHot(plant_onehot)
+        actorGridFtrs = torch.cat([gridFtrs, actionFtrs], dim=-1) 
 
-        grid_logits = self.actor_grid(ftrsGrid)
+        grid_logits = self.actor_grid(actorGridFtrs)
         grid_probs = F.softmax(grid_logits, dim=-1)
 
-        value = self.critic(ftrsPlants)
+        value = self.critic(ftrs)
 
         return plant_probs, grid_probs, value
 
@@ -90,7 +108,7 @@ class ActorCritic(nn.Module):
         actionMask = context_obs[:, :-1]
         
         plant_probs *= actionMask
-        plant_probs /= (plant_probs.sum(dim=-1, keepdim=True) + 1e-5)
+        plant_probs /= (plant_probs.sum(dim=-1, keepdim=True) + 1e-6)
 
         plant_dist = Categorical(plant_probs)
         plant_action = plant_dist.sample()
@@ -101,7 +119,7 @@ class ActorCritic(nn.Module):
 
         if gridMask is not None:
             grid_probs *= gridMask
-            grid_probs /= (grid_probs.sum(dim=-1, keepdim=True) + 1e-5)
+            grid_probs /= (grid_probs.sum(dim=-1, keepdim=True) + 1e-6)
         
         grid_dist = Categorical(grid_probs)
         grid_action = grid_dist.sample()
@@ -177,7 +195,7 @@ class RolloutBuffer:
 class PPOAgent:
     def __init__(self,
                 grid_h=5, 
-                grid_w=8, 
+                grid_w=9, 
                 n_plants=9, 
                 n_zoms=5, 
                 lr=3e-4, 
