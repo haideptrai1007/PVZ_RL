@@ -102,7 +102,7 @@ class PVZ_Reinforcement():
             onMap += len(i)        
         return onPending + onMap
     
-    def get_valid_grid(self):
+    def get_valid_grid(self, device):
         width = self.data["width"]
 
         plantsGrs = self.Control.state.plant_groups
@@ -117,7 +117,7 @@ class PVZ_Reinforcement():
         masked = np.zeros((5, 9))
         masked[:, :4] = 1
         matrix *= masked
-        matrix = torch.from_numpy(matrix.flatten()).float()
+        matrix = torch.from_numpy(matrix.flatten()).float().to(device)
         return matrix, totalPlants
 
     # Observation
@@ -204,7 +204,7 @@ class PVZ_Reinforcement():
                         agent.store_reward_and_done(*prev)
                         prev = None
 
-                    gridMask, totalPlants = self.get_valid_grid()
+                    gridMask, totalPlants = self.get_valid_grid(agent.device)
                     if (currPlants - totalPlants) < 0:
                         reward -= (currPlants + totalPlants)*0.01
 
@@ -245,7 +245,7 @@ class PVZ_Reinforcement():
                 episode_reward -= 1
             else:
                 agent.store_reward_and_done(prev[0] + 1, True)
-                print("win")
+                print("Win")
                 episode_reward += 1
             
             episode_rewards.append(episode_reward)
