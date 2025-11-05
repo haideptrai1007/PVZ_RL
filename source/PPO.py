@@ -15,7 +15,7 @@ class GridNet(nn.Module):
         self.conv1 = nn.Conv2d(32, 64, 3)
         self.bn1 = nn.BatchNorm2d(64)
 
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((32, 32))
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((8, 8))
         self.conv2 = nn.Conv2d(64, 1, kernel_size=1)
 
     def forward(self, x):
@@ -29,19 +29,17 @@ class GridNet(nn.Module):
 class Context(nn.Module):
     def __init__(self, input_channels=10):
         super().__init__()
-        self.L1 = nn.Linear(input_channels, 32)
-        self.L2 = nn.Linear(32, 64)
-        self.L3 = nn.Linear(64, 128)
+        self.L1 = nn.Linear(input_channels, 64)
+        self.L2 = nn.Linear(64, 64)
     
     def forward(self, x):
         x = F.relu(self.L1(x))
         x = F.relu(self.L2(x))
-        x = F.relu(self.L3(x))
-        
+    
         return x
 
 class ActorCritic(nn.Module):
-    def __init__(self, grid_h=5, grid_w=9, n_plants=9, n_zoms=5):
+    def __init__(self, grid_h=5, grid_w=9, n_plants=5, n_zoms=5):
         super(ActorCritic, self).__init__()
 
         self.grid_h = grid_h
@@ -49,32 +47,31 @@ class ActorCritic(nn.Module):
         self.n_plants = n_plants
         self.n_zoms = n_zoms
 
-
         self.Net = GridNet()
-        self.Context = Context()
-        self.ActionOneHot = Context(n_plants)
+        self.Context = Context(6)
+        self.ActionOneHot = Context(self.n_plants)
 
         self.actor_plant = nn.Sequential(
-            nn.Linear(1152, 512), # 1024 (Net) + 128(Context)
-            nn.ReLU(),
-            nn.Linear(512, 256),
-            nn.GELU(),
+            nn.Linear(128, 256), # 1024 (Net) + 128(Context)
+            nn.Tanh(),
+            nn.Linear(256, 256),
+            nn.Tanh(),
             nn.Linear(256, self.n_plants)
         )
 
         self.actor_grid = nn.Sequential(
-            nn.Linear(1152, 512),
-            nn.ReLU(),
-            nn.Linear(512, 256),
+            nn.Linear(128, 256), # 1024 (Net) + 128(Context)
             nn.GELU(),
-            nn.Linear(256, self.grid_h * self.grid_w)
+            nn.Linear(256, 256),
+            nn.Tanh(),
+            nn.Linear(256, 20)
         )
 
         self.critic = nn.Sequential(
-            nn.Linear(1152, 512),
-            nn.ReLU(),
-            nn.Linear(512, 256),
+            nn.Linear(128, 256), 
             nn.GELU(),
+            nn.Linear(256, 256),
+            nn.Tanh(),
             nn.Linear(256, 1)
         )
 
@@ -107,10 +104,13 @@ class ActorCritic(nn.Module):
         _, context_obs = state
 
         plant_probs, _, value = self.forward(state)
-        actionMask = context_obs[:, :-1]
-        
+        actionMask = context_obs[:,:-1]
         plant_probs *= actionMask
-        plant_probs /= (plant_probs.sum(dim=-1, keepdim=True) + 1e-6)
+        
+        plant_probs /= (plant_probs.sum(dim=-1, keepdim=True) + 3e-6)
+        
+        if torch.count_nonzero(plant_probs) == 0:
+            plant_probs[0] = 1
 
         plant_dist = Categorical(plant_probs)
         plant_action = plant_dist.sample()
@@ -121,7 +121,7 @@ class ActorCritic(nn.Module):
 
         if gridMask is not None:
             grid_probs *= gridMask
-            grid_probs /= (grid_probs.sum(dim=-1, keepdim=True) + 1e-6)
+            grid_probs /= (grid_probs.sum(dim=-1, keepdim=True) + 3e-6)
         
         grid_dist = Categorical(grid_probs)
         grid_action = grid_dist.sample()
@@ -211,7 +211,7 @@ class PPOAgent:
                 lr=3e-4, 
                 gamma=0.99, 
                 gae_lamb=0.95, 
-                eps=0.1, 
+                eps=0.2, 
                 value_coef=1, 
                 entropy_coef=0.1,
                 max_grad_norm=0.5,
@@ -230,7 +230,7 @@ class PPOAgent:
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.policy = ActorCritic(grid_h, grid_w, n_plants, n_zoms).to(self.device)
+        self.policy = ActorCritic().to(self.device)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)
 
         self.buffer = RolloutBuffer()
@@ -364,7 +364,6 @@ class PPOAgent:
 
                 num_updates += 1
 
-        self.buffer.save()
         self.buffer.clear()
 
         return {

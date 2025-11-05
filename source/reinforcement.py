@@ -66,7 +66,7 @@ class PVZ_Reinforcement():
         sun = menubar.sun_value
         curr = menubar.current_time
         action_space = [int(c.canClick(sun, curr)) for c in cards]
-        return action_space
+        return action_space[:4]
     
     # Run an action
     def step(self, plantId, gridId: list):
@@ -80,8 +80,8 @@ class PVZ_Reinforcement():
 
         Ctrl = self.Control
 
-        g1 = gridId % 9
-        g2 = gridId // 9
+        g1 = gridId % 4
+        g2 = gridId // 4
 
         x = int(w[0] + (g1 + 0.5)*w[2]) 
         y = int(h[0] + (g2 + 0.5)*h[2])
@@ -107,16 +107,13 @@ class PVZ_Reinforcement():
 
         plantsGrs = self.Control.state.plant_groups
         totalPlants = 0
-        matrix = np.ones((5, 9))
+        matrix = np.ones((5, 4))
         for i in range(len(plantsGrs)):
             for p in plantsGrs[i]:
                 grid = (np.clip(p.rect.centerx, width[0], width[1]-15) - width[0]) // width[2]
                 matrix[i, grid] = 0
                 totalPlants += 1
 
-        masked = np.zeros((5, 9))
-        masked[:, :4] = 1
-        matrix *= masked
         matrix = torch.from_numpy(matrix.flatten()).float().to(device)
         return matrix, totalPlants
 
@@ -155,7 +152,6 @@ class PVZ_Reinforcement():
         sun_val = self.Control.state.menubar.sun_value
         action_space = [1.0] + self.valid_action_space() + [sun_val]
         action_space = np.array(action_space, dtype=float)
-        action_space[5:-1] = 0.0
         context_state = torch.from_numpy(action_space).float()
 
         return [grid_state, context_state]
@@ -208,21 +204,25 @@ class PVZ_Reinforcement():
                         break
 
                     if (currPlants - totalPlants) < 0:
-                        reward -= (currPlants + totalPlants)*0.0001
+                        reward -= (currPlants + totalPlants)*0.01
 
                     newZom = self.__checkZombie()
                     if currZom > newZom:
                         zomkill = currZom - newZom
                         episode_zombie_killed += zomkill
-                        reward += zomkill * 0.5
+                        reward += zomkill * 1
                         currZom = newZom
-                    
+
+
+                    _, ctx_state = curr_state
+                    if torch.count_nonzero(ctx_state[1:-1]) == 0:
+                        continue
                     plant_action, grid_action = agent.select_action(curr_state, gridMask)
+
+
                     if (isinstance(Ctrl.state, game_state)):
                         self.step(plant_action, grid_action)
                         next_state = self.totalObserve()
-                    reward += 0.00025
-
 
                     curr_state = next_state
                     reward = reward - old_reward
@@ -250,7 +250,7 @@ class PVZ_Reinforcement():
             else:
                 agent.store_reward_and_done(prev[0] + 5, True)
                 print("Win")
-                episode_reward += 5
+                episode_reward += 100
             
             episode_rewards.append(episode_reward)
             episode_lengths.append(episode_length)
@@ -258,7 +258,7 @@ class PVZ_Reinforcement():
         
             if (episode + 1) % update_frequency == 0:
                 stats = agent.update()
-                agent.entropy_coef *= 0.95
+                agent.entropy_coef *= 0.99
                     
                 avg_reward = np.mean(episode_rewards[-update_frequency:])
                 avg_length = np.mean(episode_lengths[-update_frequency:])
