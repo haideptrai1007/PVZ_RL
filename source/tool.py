@@ -163,8 +163,8 @@ def loadPlantImageRect():
     f.close()
     return data[c.PLANT_IMAGE_RECT]
 
-# import os
-# os.environ["SDL_VIDEODRIVER"] = "dummy"
+import os
+os.environ["SDL_VIDEODRIVER"] = "dummy"
 
 pg.init()
 pg.display.set_caption(c.ORIGINAL_CAPTION)

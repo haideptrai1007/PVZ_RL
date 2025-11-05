@@ -211,12 +211,12 @@ class PPOAgent:
                 lr=3e-4, 
                 gamma=0.99, 
                 gae_lamb=0.95, 
-                eps=0.3, 
+                eps=0.1, 
                 value_coef=1, 
                 entropy_coef=0.1,
                 max_grad_norm=0.5,
-                ppo_epochs=10,
-                mini_batch_size=512):
+                ppo_epochs=3,
+                mini_batch_size=128):
         
 
         self.gamma = gamma
