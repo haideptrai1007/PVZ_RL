@@ -8,15 +8,15 @@ import pickle
 
 
 class GridNet(nn.Module):
-    def __init__(self, input_channels=13):
+    def __init__(self, input_channels=9):
         super().__init__()
-        self.upsample = nn.ConvTranspose2d(input_channels, 32, 
+        self.upsample = nn.ConvTranspose2d(input_channels, 16, 
                                     kernel_size=4, stride=2, padding=1)
-        self.conv1 = nn.Conv2d(32, 64, 3)
-        self.bn1 = nn.BatchNorm2d(64)
+        self.conv1 = nn.Conv2d(16, 32, 3)
+        self.bn1 = nn.BatchNorm2d(32)
 
         self.adaptive_pool = nn.AdaptiveAvgPool2d((8, 8))
-        self.conv2 = nn.Conv2d(64, 1, kernel_size=1)
+        self.conv2 = nn.Conv2d(32, 1, kernel_size=1)
 
     def forward(self, x):
         x = F.relu(self.upsample(x))  
@@ -47,12 +47,23 @@ class ActorCritic(nn.Module):
         self.n_plants = n_plants
         self.n_zoms = n_zoms
 
-        self.Net = GridNet()
-        self.Context = Context(6)
+        self.NetActor = GridNet()
+        self.NetActorNext = GridNet()
+        self.NetCritic = GridNet()
+        self.ContextActor = Context(6)
+        self.ContextCritic = Context(6)
         self.ActionOneHot = Context(self.n_plants)
 
         self.actor_plant = nn.Sequential(
-            nn.Linear(128, 256), # 1024 (Net) + 128(Context)
+            nn.Linear(128, 256),
+            nn.GELU(),
+            nn.Linear(256, 256),
+            nn.GELU(),
+            nn.Linear(256, 256),
+            nn.Tanh(),
+            nn.Linear(256, 256),
+            nn.Tanh(),
+            nn.Linear(256, 256),
             nn.Tanh(),
             nn.Linear(256, 256),
             nn.Tanh(),
@@ -60,8 +71,16 @@ class ActorCritic(nn.Module):
         )
 
         self.actor_grid = nn.Sequential(
-            nn.Linear(128, 256), # 1024 (Net) + 128(Context)
+            nn.Linear(128, 256),
             nn.GELU(),
+            nn.Linear(256, 256),
+            nn.GELU(),
+            nn.Linear(256, 256),
+            nn.Tanh(),
+            nn.Linear(256, 256),
+            nn.Tanh(),
+            nn.Linear(256, 256),
+            nn.Tanh(),
             nn.Linear(256, 256),
             nn.Tanh(),
             nn.Linear(256, 20)
@@ -71,15 +90,23 @@ class ActorCritic(nn.Module):
             nn.Linear(128, 256), 
             nn.GELU(),
             nn.Linear(256, 256),
+            nn.GELU(),
+            nn.Linear(256, 256),
             nn.Tanh(),
+            nn.Linear(256, 256),
+            nn.Tanh(),
+            nn.Linear(256, 256),
+            nn.GELU(),
+            nn.Linear(256, 256),
+            nn.GELU(),
             nn.Linear(256, 1)
         )
 
     def forward(self, state, plant_action=None):
         grid_obs, context_obs = state
 
-        gridFtrs = self.Net(grid_obs)
-        contextFtrs = self.Context(context_obs)
+        gridFtrs = self.NetActor(grid_obs)
+        contextFtrs = self.ContextActor(context_obs)
         ftrs = torch.cat([gridFtrs, contextFtrs], dim=-1)
 
         plant_logits = self.actor_plant(ftrs)
@@ -90,13 +117,17 @@ class ActorCritic(nn.Module):
         else:
             plant_onehot = F.one_hot(plant_action, num_classes=self.n_plants).float()
 
+        nextGridFtrs = self.NetActorNext(grid_obs)
         actionFtrs = self.ActionOneHot(plant_onehot)
-        actorGridFtrs = torch.cat([gridFtrs, actionFtrs], dim=-1) 
+        actorGridFtrs = torch.cat([nextGridFtrs, actionFtrs], dim=-1) 
 
         grid_logits = self.actor_grid(actorGridFtrs)
         grid_probs = F.softmax(grid_logits, dim=-1)
 
-        value = self.critic(ftrs)
+        criticNetFtrs = self.NetCritic(grid_obs)
+        criticContextFtrs = self.ContextCritic(context_obs)
+        criticFtrs = torch.cat([criticNetFtrs, criticContextFtrs], dim=-1)
+        value = self.critic(criticFtrs)
 
         return plant_probs, grid_probs, value
 
@@ -216,7 +247,7 @@ class PPOAgent:
                 entropy_coef=0.1,
                 max_grad_norm=0.5,
                 ppo_epochs=3,
-                mini_batch_size=128):
+                mini_batch_size=256):
         
 
         self.gamma = gamma

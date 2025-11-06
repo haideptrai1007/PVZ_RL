@@ -134,7 +134,7 @@ class PVZ_Reinforcement():
 
                 zombie_obs[i][grid][idx] += 1
         
-        plants_obs = np.zeros((5, 9, 8), dtype=int)
+        plants_obs = np.zeros((5, 9, 4), dtype=int)
         plantsGrs = Ctrl.state.plant_groups
         
         for i in range(len(plantsGrs)):
@@ -147,7 +147,7 @@ class PVZ_Reinforcement():
     
     def totalObserve(self):
         obs = self.grid_observe()
-        grid_state = torch.from_numpy(obs).type(torch.float).reshape(13,5,9)
+        grid_state = torch.from_numpy(obs).type(torch.float).reshape(9,5,9)
 
         sun_val = self.Control.state.menubar.sun_value
         action_space = [1.0] + self.valid_action_space() + [sun_val]
@@ -165,6 +165,7 @@ class PVZ_Reinforcement():
         episode_rewards = []
         episode_lengths = []
         zombies_killed_history = []
+        total_win = 0
 
         for episode in range(loops):
             self.reset()
@@ -249,7 +250,7 @@ class PVZ_Reinforcement():
                 episode_reward -= 0
             else:
                 agent.store_reward_and_done(prev[0] + 5, True)
-                print("Win")
+                total_win += 1
                 episode_reward += 100
             
             episode_rewards.append(episode_reward)
@@ -265,6 +266,7 @@ class PVZ_Reinforcement():
                 avg_zombies = np.mean(zombies_killed_history[-update_frequency:])
                 
                 print(f"Episode {episode + 1}/{loops}")
+                print(f"  Total Win: {total_win}")
                 print(f"  Avg Reward (last {update_frequency}): {avg_reward:.2f}")
                 print(f"  Avg Length: {avg_length:.1f}")
                 print(f"  Avg Zombies Killed: {avg_zombies:.1f}")
