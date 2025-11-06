@@ -166,8 +166,8 @@ class PVZ_Reinforcement():
         episode_lengths = []
         zombies_killed_history = []
 
+        total_win = 0
         for episode in range(loops):
-            total_win = 0
             self.reset()
             self.initialize(speed)
 

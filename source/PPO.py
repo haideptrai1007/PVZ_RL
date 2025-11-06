@@ -246,7 +246,7 @@ class PPOAgent:
                 value_coef=1, 
                 entropy_coef=0.1,
                 max_grad_norm=0.5,
-                ppo_epochs=3,
+                ppo_epochs=6,
                 mini_batch_size=256):
         
 
