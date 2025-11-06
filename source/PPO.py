@@ -242,7 +242,7 @@ class PPOAgent:
                 lr=3e-4, 
                 gamma=0.99, 
                 gae_lamb=0.9, 
-                eps=0.4, 
+                eps=0.2, 
                 value_coef=1, 
                 entropy_coef=0.1,
                 max_grad_norm=0.5,
