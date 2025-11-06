@@ -165,9 +165,9 @@ class PVZ_Reinforcement():
         episode_rewards = []
         episode_lengths = []
         zombies_killed_history = []
-        total_win = 0
 
         for episode in range(loops):
+            total_win = 0
             self.reset()
             self.initialize(speed)
 
@@ -211,7 +211,7 @@ class PVZ_Reinforcement():
                     if currZom > newZom:
                         zomkill = currZom - newZom
                         episode_zombie_killed += zomkill
-                        reward += zomkill * 1
+                        reward += zomkill * 2
                         currZom = newZom
 
 
@@ -226,15 +226,15 @@ class PVZ_Reinforcement():
                         next_state = self.totalObserve()
 
                     curr_state = next_state
-                    reward = reward - old_reward
+                    next_reward = reward - old_reward
                     old_reward = reward
 
                     if prev:
                         agent.store_reward_and_done(*prev)
                         prev = None
-                    prev = [reward, False]
+                    prev = [next_reward, False]
 
-                    episode_reward += reward
+                    episode_reward += next_reward
                     episode_length += 1
                 
                 if isinstance(Ctrl.state, game_state):
@@ -249,9 +249,9 @@ class PVZ_Reinforcement():
                 agent.store_reward_and_done(prev[0], True)
                 episode_reward -= 0
             else:
-                agent.store_reward_and_done(prev[0] + 5, True)
+                agent.store_reward_and_done(prev[0] + 10, True)
                 total_win += 1
-                episode_reward += 100
+                episode_reward += 10
             
             episode_rewards.append(episode_reward)
             episode_lengths.append(episode_length)
