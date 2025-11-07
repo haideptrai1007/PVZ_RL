@@ -205,7 +205,8 @@ class PVZ_Reinforcement():
                         break
 
                     if (currPlants - totalPlants) < 0:
-                        reward -= (currPlants + totalPlants)*0.01
+                        reward += (currPlants - totalPlants)*0.1
+                        currPlants = totalPlants
 
                     newZom = self.__checkZombie()
                     if currZom > newZom:
@@ -214,26 +215,23 @@ class PVZ_Reinforcement():
                         reward += zomkill * 2
                         currZom = newZom
 
-
-                    _, ctx_state = curr_state
-                    if torch.count_nonzero(ctx_state[1:-1]) == 0:
-                        continue
                     plant_action, grid_action = agent.select_action(curr_state, gridMask)
-
-
                     if (isinstance(Ctrl.state, game_state)):
+                        if plant_action != 0:
+                            currPlants += 1
+                            reward -= 0.1
                         self.step(plant_action, grid_action)
                         next_state = self.totalObserve()
 
                     curr_state = next_state
                     next_reward = reward - old_reward
                     old_reward = reward
-
+                    
                     if prev:
                         agent.store_reward_and_done(*prev)
                         prev = None
+        
                     prev = [next_reward, False]
-
                     episode_reward += next_reward
                     episode_length += 1
                 
@@ -274,6 +272,7 @@ class PVZ_Reinforcement():
                 print(f"  Value Loss: {stats['value_loss']:.4f}")
                 print(f"  Entropy: {stats['entropy']:.4f}")
                 print()
+                total_win = 0
         if save:
             agent.save("pvz_ppo_trained.pth")
         print("\nTraining complete!")
