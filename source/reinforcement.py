@@ -166,7 +166,7 @@ class PVZ_Reinforcement():
             agent.load(checkpoint)
 
         bestAvgRewards = 0
-        bestModelPath = "./training/best_model.pth"
+        bestModelPath = "best_model.pth"
 
         episode_rewards = []
         episode_lengths = []
