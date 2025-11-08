@@ -56,50 +56,32 @@ class ActorCritic(nn.Module):
 
         self.actor_plant = nn.Sequential(
             nn.Linear(128, 256),
-            nn.GELU(),
-            nn.Linear(256, 256),
-            nn.GELU(),
-            nn.Linear(256, 256),
+            nn.LayerNorm(256),
             nn.Tanh(),
             nn.Linear(256, 256),
-            nn.Tanh(),
-            nn.Linear(256, 256),
-            nn.Tanh(),
-            nn.Linear(256, 256),
+            nn.LayerNorm(256),
             nn.Tanh(),
             nn.Linear(256, self.n_plants)
         )
 
         self.actor_grid = nn.Sequential(
             nn.Linear(128, 256),
-            nn.GELU(),
-            nn.Linear(256, 256),
-            nn.GELU(),
-            nn.Linear(256, 256),
+            nn.LayerNorm(256),
             nn.Tanh(),
             nn.Linear(256, 256),
-            nn.Tanh(),
-            nn.Linear(256, 256),
-            nn.Tanh(),
-            nn.Linear(256, 256),
+            nn.LayerNorm(256),
             nn.Tanh(),
             nn.Linear(256, 20)
         )
 
         self.critic = nn.Sequential(
-            nn.Linear(128, 256), 
-            nn.GELU(),
-            nn.Linear(256, 256),
-            nn.GELU(),
-            nn.Linear(256, 256),
+            nn.Linear(128, 128),
+            nn.LayerNorm(128),
             nn.Tanh(),
-            nn.Linear(256, 256),
+            nn.Linear(128, 128),
+            nn.LayerNorm(128),
             nn.Tanh(),
-            nn.Linear(256, 256),
-            nn.GELU(),
-            nn.Linear(256, 256),
-            nn.GELU(),
-            nn.Linear(256, 1)
+            nn.Linear(128, 1)
         )
 
     def forward(self, state, plant_action=None):
@@ -360,7 +342,7 @@ class PPOAgent:
                 batch_returns = returns_tensor[batch_indices]
 
                 new_plant_log_probs, new_grid_log_probs, entropy, values = self.policy.evaluate_actions(batch_states, batch_plant_actions, batch_grid_actions)
-
+                batch_advantages = (batch_advantages - batch_advantages.mean()) / (batch_advantages.std() + 1e-8)
                 ratio_plant = torch.exp(new_plant_log_probs - batch_old_plant_log_probs)
                 ratio_grid = torch.exp(new_grid_log_probs - batch_old_grid_log_probs)
 
@@ -372,13 +354,8 @@ class PPOAgent:
                 surr2_grid = torch.clamp(ratio_grid, 1 - self.eps, 1 + self.eps) * batch_advantages
                 policy_loss_grid = -torch.min(surr1_grid, surr2_grid).mean()
 
-                policy_loss = (policy_loss_plant + policy_loss_grid) / 2
-
-                batch_advantages = (batch_advantages - batch_advantages.mean()) / (batch_advantages.std() + 1e-8)
-
-
+                policy_loss = policy_loss_plant + policy_loss_grid
                 value_loss = F.mse_loss(values.squeeze(), batch_returns)
-
                 entropy_loss = -entropy.mean()
 
                 loss = policy_loss + self.value_coef * value_loss + self.entropy_coef * entropy_loss

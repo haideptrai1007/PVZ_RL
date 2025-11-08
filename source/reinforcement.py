@@ -7,6 +7,9 @@ import numpy as np
 
 from . import PPO
 import torch
+import os 
+
+
 
 class PVZ_Reinforcement():
     def __init__(self, filePath):
@@ -162,6 +165,9 @@ class PVZ_Reinforcement():
         if checkpoint:
             agent.load(checkpoint)
 
+        bestAvgRewards = 0
+        bestModelPath = "./training/best_model.pth"
+
         episode_rewards = []
         episode_lengths = []
         zombies_killed_history = []
@@ -262,6 +268,14 @@ class PVZ_Reinforcement():
                 avg_reward = np.mean(episode_rewards[-update_frequency:])
                 avg_length = np.mean(episode_lengths[-update_frequency:])
                 avg_zombies = np.mean(zombies_killed_history[-update_frequency:])
+
+                if avg_reward > bestAvgRewards:
+                    bestAvgRewards = avg_reward
+                    
+                    if os.path.exists(bestModelPath):
+                        os.remove(bestModelPath)
+
+                    agent.save(bestModelPath)
                 
                 print(f"Episode {episode + 1}/{loops}")
                 print(f"  Total Win: {total_win}")
