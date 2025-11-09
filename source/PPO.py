@@ -38,41 +38,57 @@ class ActorCritic(nn.Module):
         self.critic = nn.Sequential(
             nn.Linear(32 + n_plants + 1, 64),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(64, 128),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(128, 128),
+            nn.Tanh(),    
+            nn.Linear(128, 128),
             nn.Tanh(),
-            nn.Linear(64, 1)
+            nn.Linear(128, 128),
+            nn.Tanh(),  
+            nn.Linear(128, 1)
         )
         
         self.plantAct = nn.Sequential(
             nn.Linear(32 + n_plants + 1, 64),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(64, 128),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(128, 128),
+            nn.Tanh(),    
+            nn.Linear(128, 128),
             nn.Tanh(),
-            nn.Linear(64, n_plants)
+            nn.Linear(128, 128),
+            nn.Tanh(),  
+            nn.Linear(128, n_plants)
         )
 
         self.laneAct = nn.Sequential(
             nn.Linear(32 + n_plants, 64),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(64, 128),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(128, 128),
+            nn.Tanh(),    
+            nn.Linear(128, 128),
+            nn.Tanh(),
+            nn.Linear(128, 128),
             nn.Tanh(),            
-            nn.Linear(64, grid_h)
+            nn.Linear(128, grid_h)
         )
 
         self.posAct = nn.Sequential(
             nn.Linear(32 + grid_h + n_plants, 64),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(64, 128),
             nn.Tanh(),
-            nn.Linear(64, 64),
+            nn.Linear(128, 128),
             nn.Tanh(),    
-            nn.Linear(64, grid_w) 
+            nn.Linear(128, 128),
+            nn.Tanh(),
+            nn.Linear(128, 128),
+            nn.Tanh(),    
+            nn.Linear(128, grid_w) 
         )
 
     def forward(self, gridState, contextState, plantAction=None, laneAction=None):
