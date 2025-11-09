@@ -72,10 +72,10 @@ class PVZ_Reinforcement():
         return action_space[:4]
     
     # Run an action
-    def step(self, plantId, gridId: list):
-        if int(plantId) <= 0:
+    def step(self, plantAct, laneAct, posAct):
+        if int(plantAct) <= 0:
             return
-        plantId -= 1
+        plantAct -= 1
         plants = self.data["plants"]
         actions = self.data["actions"]
         w = self.data["width"]
@@ -83,17 +83,17 @@ class PVZ_Reinforcement():
 
         Ctrl = self.Control
 
-        g1 = gridId % 4
-        g2 = gridId // 4
+        g1 = posAct
+        g2 = laneAct
 
         x = int(w[0] + (g1 + 0.5)*w[2]) 
         y = int(h[0] + (g2 + 0.5)*h[2])
 
-        Ctrl.state.update(surface=Ctrl.screen, current_time=Ctrl.current_time, mouse_pos=tuple(actions[plantId]), mouse_click=[True, False])
+        Ctrl.state.update(surface=Ctrl.screen, current_time=Ctrl.current_time, mouse_pos=tuple(actions[plantAct]), mouse_click=[True, False])
         Ctrl.state.addPlant((x, y))
 
         if isinstance(Ctrl.state, level.Level):
-            Ctrl.state.menubar.setCardFrozenTime(plants[plantId])
+            Ctrl.state.menubar.setCardFrozenTime(plants[plantAct])
     
     def __checkZombie(self): 
         Ctrl = self.Control
@@ -117,7 +117,7 @@ class PVZ_Reinforcement():
                 matrix[i, grid] = 0
                 totalPlants += 1
 
-        matrix = torch.from_numpy(matrix.flatten()).float().to(device)
+        matrix = torch.from_numpy(matrix).float().to(device)
         return matrix, totalPlants
 
     # Observation
@@ -127,46 +127,42 @@ class PVZ_Reinforcement():
         width = self.data["width"]
 
         Ctrl = self.Control
-        zombie_obs = np.zeros((5, 9, 5), dtype=int)
+        zombie_obs = np.zeros((5, 9, 1), dtype=int)
         zombiesGrs = Ctrl.state.zombie_groups
 
         for i in range(len(zombiesGrs)):
             for zom in zombiesGrs[i]:
                 idx = zombies.index(zom.name)
                 grid = (np.clip(zom.rect.centerx, width[0], width[1]-15) - width[0]) // width[2]
-
-                zombie_obs[i][grid][idx] += 1
+                zombie_obs[i][grid][0] += 1*(idx+1)
         
-        plants_obs = np.zeros((5, 9, 4), dtype=int)
+        plants_obs = np.zeros((5, 9, 1), dtype=int)
         plantsGrs = Ctrl.state.plant_groups
         
         for i in range(len(plantsGrs)):
             for p in plantsGrs[i]:
                 idx = plants.index(p.name.lower())
                 grid = (np.clip(p.rect.centerx, width[0], width[1]-15) - width[0]) // width[2]
-                plants_obs[i][grid][idx] = 1
+                plants_obs[i][grid][0] = idx + 1
 
         return np.concatenate((zombie_obs, plants_obs), axis=2)
     
     def totalObserve(self):
         obs = self.grid_observe()
-        grid_state = torch.from_numpy(obs).type(torch.float).reshape(9,5,9)
+        grid_state = torch.from_numpy(obs).type(torch.float).reshape(2,5,9)
 
         sun_val = self.Control.state.menubar.sun_value
         action_space = [1.0] + self.valid_action_space() + [sun_val]
         action_space = np.array(action_space, dtype=float)
         context_state = torch.from_numpy(action_space).float()
 
-        return [grid_state, context_state]
+        return grid_state, context_state
 
     # Run
-    def run(self, speed=1, loops=1, update_frequency=10, checkpoint=None, save=True, lr=1e-5, value_coef=0.8, entropy_coef=0.001):
+    def run(self, speed=1, loops=1, update_frequency=10, checkpoint=None, save=True, lr=1e-5, value_coef=0.8, entropy_coef=0.001, inference_mode=False):
         agent = PPO.PPOAgent(lr=lr, value_coef=value_coef, entropy_coef=entropy_coef)
         if checkpoint:
             agent.load(checkpoint)
-
-        bestAvgRewards = 0
-        bestModelPath = "./training/best_model.pth"
 
         episode_rewards = []
         episode_lengths = []
@@ -196,22 +192,24 @@ class PVZ_Reinforcement():
 
             no_action_needed = False
 
+            bestModelPath = "./training/bestmodel.pth"
+            bestAvgRewards = 0
+
             while not Ctrl.done and isinstance(Ctrl.state, game_state):
                 Ctrl.update()
                 if first:
-                    curr_state = self.totalObserve()
+                    gridState, contextState = self.totalObserve()
                     first = False 
-
-
+                
                 if (pg.time.get_ticks()-start_time) >= (6000 / speed) and isinstance(Ctrl.state, game_state) and not no_action_needed:
                     start_time = pg.time.get_ticks()
                     gridMask, totalPlants = self.get_valid_grid(agent.device)
                     if torch.count_nonzero(gridMask) == 0:
                         no_action_needed = True
-                        break
+                        continue
 
                     if (currPlants - totalPlants) < 0:
-                        reward += (currPlants - totalPlants)*0.1
+                        reward += (currPlants - totalPlants)*0.4
                         currPlants = totalPlants
 
                     newZom = self.__checkZombie()
@@ -221,15 +219,14 @@ class PVZ_Reinforcement():
                         reward += zomkill * 2
                         currZom = newZom
 
-                    plant_action, grid_action = agent.select_action(curr_state, gridMask)
+                    plantAction, laneAction, posAction  = agent.select_action(gridState, contextState, gridMask, inference_mode=inference_mode)
                     if (isinstance(Ctrl.state, game_state)):
-                        if plant_action != 0:
+                        if plantAction != 0:
                             currPlants += 1
                             reward -= 0.1
-                        self.step(plant_action, grid_action)
-                        next_state = self.totalObserve()
+                        self.step(plantAction, laneAction, posAction)
+                        gridState, contextState = self.totalObserve()
 
-                    curr_state = next_state
                     next_reward = reward - old_reward
                     old_reward = reward
                     
@@ -260,8 +257,9 @@ class PVZ_Reinforcement():
             episode_rewards.append(episode_reward)
             episode_lengths.append(episode_length)
             zombies_killed_history.append(episode_zombie_killed)
-        
-            if (episode + 1) % update_frequency == 0:
+
+
+            if (episode + 1) % update_frequency == 0 and not inference_mode:
                 stats = agent.update()
                 agent.entropy_coef *= 0.99
                     
@@ -287,7 +285,7 @@ class PVZ_Reinforcement():
                 print(f"  Entropy: {stats['entropy']:.4f}")
                 print()
                 total_win = 0
-        if save:
-            agent.save("pvz_ppo_trained.pth")
+        if save and not inference_mode:
+            agent.save("./training/last.pth")
         print("\nTraining complete!")
         print(f"Model saved to 'pvz_ppo_trained.pth'")

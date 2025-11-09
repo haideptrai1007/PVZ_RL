@@ -12,6 +12,7 @@ if __name__ == '__main__':
     parser.add_argument("--lr", type=float, default=1e-6)
     parser.add_argument("--vc", type=float, default=1)
     parser.add_argument("--ec", type=float, default=0.01)
+    parser.add_argument("--infer", type=bool, default=False)
     args = parser.parse_args()
     main(**vars(args))
     pg.quit()

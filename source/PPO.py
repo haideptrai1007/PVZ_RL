@@ -8,174 +8,216 @@ import pickle
 
 
 class GridNet(nn.Module):
-    def __init__(self, input_channels=9):
+    def __init__(self, in_channels, out_channels):
         super().__init__()
-        self.upsample = nn.ConvTranspose2d(input_channels, 16, 
-                                    kernel_size=4, stride=2, padding=1)
-        self.conv1 = nn.Conv2d(16, 32, 3)
-        self.bn1 = nn.BatchNorm2d(32)
-
-        self.adaptive_pool = nn.AdaptiveAvgPool2d((8, 8))
-        self.conv2 = nn.Conv2d(32, 1, kernel_size=1)
+        self.conv1 = nn.Conv2d(in_channels, 16, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)           
+        self.pool = nn.MaxPool2d(2, 2) 
+        self.fc = nn.Linear(32*2*4, out_channels)   
+        self.relu1 = nn.ReLU()
+        self.relu2 = nn.ReLU()
 
     def forward(self, x):
-        x = F.relu(self.upsample(x))  
-        x = F.relu(self.bn1(self.conv1(x)))
-        x = self.adaptive_pool(x)  
-        x = self.conv2(x) 
-        x = x.view(x.size(0), -1) 
-        return x
-
-class Context(nn.Module):
-    def __init__(self, input_channels=10):
-        super().__init__()
-        self.L1 = nn.Linear(input_channels, 64)
-        self.L2 = nn.Linear(64, 64)
-    
-    def forward(self, x):
-        x = F.relu(self.L1(x))
-        x = F.relu(self.L2(x))
-    
+        x = self.relu1(self.conv1(x))
+        x = self.relu2(self.conv2(x))
+        x = self.pool(x)               
+        x = x.view(x.size(0), -1)      
+        x = self.fc(x)              
         return x
 
 class ActorCritic(nn.Module):
-    def __init__(self, grid_h=5, grid_w=9, n_plants=5, n_zoms=5):
+    def __init__(self, grid_h, grid_w, n_plants):
         super(ActorCritic, self).__init__()
 
         self.grid_h = grid_h
         self.grid_w = grid_w
         self.n_plants = n_plants
-        self.n_zoms = n_zoms
 
-        self.NetActor = GridNet()
-        self.NetActorNext = GridNet()
-        self.NetCritic = GridNet()
-        self.ContextActor = Context(6)
-        self.ContextCritic = Context(6)
-        self.ActionOneHot = Context(self.n_plants)
-
-        self.actor_plant = nn.Sequential(
-            nn.Linear(128, 256),
-            nn.LayerNorm(256),
-            nn.Tanh(),
-            nn.Linear(256, 256),
-            nn.LayerNorm(256),
-            nn.Tanh(),
-            nn.Linear(256, self.n_plants)
-        )
-
-        self.actor_grid = nn.Sequential(
-            nn.Linear(128, 256),
-            nn.LayerNorm(256),
-            nn.Tanh(),
-            nn.Linear(256, 256),
-            nn.LayerNorm(256),
-            nn.Tanh(),
-            nn.Linear(256, 20)
-        )
+        self.gridObs = GridNet(2, 32)
 
         self.critic = nn.Sequential(
-            nn.Linear(128, 128),
-            nn.LayerNorm(128),
+            nn.Linear(32 + n_plants + 1, 64),
             nn.Tanh(),
-            nn.Linear(128, 128),
-            nn.LayerNorm(128),
+            nn.Linear(64, 64),
             nn.Tanh(),
-            nn.Linear(128, 1)
+            nn.Linear(64, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1)
+        )
+        
+        self.plantAct = nn.Sequential(
+            nn.Linear(32 + n_plants + 1, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
+            nn.Linear(64, n_plants)
         )
 
-    def forward(self, state, plant_action=None):
-        grid_obs, context_obs = state
+        self.laneAct = nn.Sequential(
+            nn.Linear(32 + n_plants, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),            
+            nn.Linear(64, grid_h)
+        )
 
-        gridFtrs = self.NetActor(grid_obs)
-        contextFtrs = self.ContextActor(context_obs)
-        ftrs = torch.cat([gridFtrs, contextFtrs], dim=-1)
+        self.posAct = nn.Sequential(
+            nn.Linear(32 + grid_h + n_plants, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),
+            nn.Linear(64, 64),
+            nn.Tanh(),    
+            nn.Linear(64, grid_w) 
+        )
 
-        plant_logits = self.actor_plant(ftrs)
-        plant_probs = F.softmax(plant_logits, dim=-1)
+    def forward(self, gridState, contextState, plantAction=None, laneAction=None):
+        gridFtrs = self.gridObs(gridState)
+        obs = torch.cat([gridFtrs, contextState], dim=-1)
 
-        if plant_action is None:
-            plant_onehot = plant_probs
+        value = self.critic(obs)
+        plantLogits = self.plantAct(obs)
+        plantProbs = F.softmax(plantLogits, dim=-1)
+
+        if plantAction is not None:
+            plantOneHot = F.one_hot(plantAction, num_classes=self.n_plants).float()
         else:
-            plant_onehot = F.one_hot(plant_action, num_classes=self.n_plants).float()
+            plantOneHot = plantProbs
 
-        nextGridFtrs = self.NetActorNext(grid_obs)
-        actionFtrs = self.ActionOneHot(plant_onehot)
-        actorGridFtrs = torch.cat([nextGridFtrs, actionFtrs], dim=-1) 
+        laneObs = torch.cat([gridFtrs, plantOneHot], dim=-1)
+        laneLogits = self.laneAct(laneObs)
+        laneProbs = F.softmax(laneLogits, dim=-1)
 
-        grid_logits = self.actor_grid(actorGridFtrs)
-        grid_probs = F.softmax(grid_logits, dim=-1)
+        if laneAction is not None:
+            laneOneHot = F.one_hot(laneAction, num_classes=self.grid_h).float()
+        else:
+            laneOneHot = laneProbs
 
-        criticNetFtrs = self.NetCritic(grid_obs)
-        criticContextFtrs = self.ContextCritic(context_obs)
-        criticFtrs = torch.cat([criticNetFtrs, criticContextFtrs], dim=-1)
-        value = self.critic(criticFtrs)
+        posObs = torch.cat([laneObs, laneOneHot], dim=-1)
+        posLogits = self.posAct(posObs)
+        posProbs = F.softmax(posLogits, dim=-1)
 
-        return plant_probs, grid_probs, value
+        return plantProbs, laneProbs, posProbs, value
+    
+    def get_action(self, gridState, contextState, gridMask):
+        # Plants Forward
+        plantProbs, _, _, value = self.forward(gridState, contextState)
 
-    def get_action(self, state, gridMask=None):
-        _, context_obs = state
+        plantMask = contextState[:, :-1]
+        plantProbs *= plantMask
+        plantProbs /= (plantProbs.sum(dim=-1, keepdim=True) + 1e-6)
 
-        plant_probs, _, value = self.forward(state)
-        actionMask = context_obs[:,:-1]
-        plant_probs *= actionMask
-        
-        plant_probs /= (plant_probs.sum(dim=-1, keepdim=True) + 3e-6)
-        
-        if torch.count_nonzero(plant_probs) == 0:
-            plant_probs[0] = 1
+        plantDist = Categorical(plantProbs)
+        plantAction = plantDist.sample()
+        plantLogProb = plantDist.log_prob(plantAction)
 
-        plant_dist = Categorical(plant_probs)
-        plant_action = plant_dist.sample()
+        # Lanes Forward
+        _, laneProbs, _, _ = self.forward(gridState, contextState, plantAction)
 
-        plant_log_prob = plant_dist.log_prob(plant_action)
+        laneMask = gridMask.any(dim=1, keepdim=True).float().reshape(self.grid_h)
 
-        _, grid_probs, _ = self.forward(state, plant_action)
+        laneProbs *= laneMask
+        laneProbs /= (laneProbs.sum(dim=-1, keepdim=True) + 1e-6)
 
-        if gridMask is not None:
-            grid_probs *= gridMask
-            grid_probs /= (grid_probs.sum(dim=-1, keepdim=True) + 3e-6)
-        
-        grid_dist = Categorical(grid_probs)
-        grid_action = grid_dist.sample()
-        grid_log_prob = grid_dist.log_prob(grid_action)
+        laneDist = Categorical(laneProbs)
+        laneAction = laneDist.sample()
+        laneLogProb = laneDist.log_prob(laneAction)
 
-        return plant_action, grid_action, plant_log_prob, grid_log_prob, value
+        # Positions Forward
+        _, _, posProbs, _ = self.forward(gridState, contextState, plantAction, laneAction) 
 
-    def evaluate_actions(self, state, plant_action, grid_action):
-            plant_probs, grid_probs, value = self.forward(state, plant_action)
+        posMask = gridMask[laneAction]
 
-            plant_dist = Categorical(plant_probs)
-            plant_log_prob = plant_dist.log_prob(plant_action)
-            plant_entropy = plant_dist.entropy()
+        posProbs *= posMask
+        posProbs /= (posProbs.sum(dim=-1, keepdim=True) + 1e-6)
 
-            grid_dist = Categorical(grid_probs)
-            grid_log_prob = grid_dist.log_prob(grid_action)
-            grid_entropy = grid_dist.entropy()
+        posDist = Categorical(posProbs)
+        posAction = posDist.sample()
+        posLogProb = posDist.log_prob(posAction)
 
-            entropy = plant_entropy + grid_entropy
+        return plantAction, laneAction, posAction, plantLogProb, laneLogProb, posLogProb, value
+    
+    def inference_action(self, gridState, contextState, gridMask):
+        # Plants Forward
+        plantProbs, _, _, value = self.forward(gridState, contextState)
+        plantMask = contextState[:, :-1]
 
-            return plant_log_prob, grid_log_prob, entropy, value
+        plantProbs *= plantMask
+        plantProbs /= (plantProbs.sum(dim=-1, keepdim=True) + 1e-6)
+        plantAction = plantProbs.argmax(dim=-1)
+
+        # Lanes Forward
+        _, laneProbs, _, _ = self.forward(gridState, contextState, plantAction)
+        laneMask = gridMask.any(dim=1, keepdim=True).float().reshape(self.grid_h)
+
+        laneProbs *= laneMask
+        laneProbs /= (laneProbs.sum(dim=-1, keepdim=True) + 1e-6)
+        laneAction = laneProbs.argmax(dim=-1)
+        # Positions Forward
+        _, _, posProbs, _ = self.forward(gridState, contextState, plantAction, laneAction) 
+        posMask = gridMask[laneAction]
+
+        posProbs *= posMask
+        posProbs /= (posProbs.sum(dim=-1, keepdim=True) + 1e-6)
+        posAction = posProbs.argmax(dim=-1)
+
+        return plantAction, laneAction, posAction, value
+
+
+    def evaluate_actions(self, gridState, contextState, plantAction, laneAction, posAction):
+        plantProbs, laneProbs, posProbs, values = self.forward(gridState, contextState, plantAction, laneAction)
+
+        # Eval Plant
+        plantDist = Categorical(plantProbs)
+        plantLogProb = plantDist.log_prob(plantAction)
+        plantEntropy = plantDist.entropy()
+
+        # Eval Lane
+        laneDist = Categorical(laneProbs)
+        laneLogProb = laneDist.log_prob(laneAction)
+        laneEntropy = laneDist.entropy()
+
+        # Eval Pos
+        posDist = Categorical(posProbs)
+        posLogProb = posDist.log_prob(posAction)
+        posEntropy = posDist.entropy()
+
+        entropy = plantEntropy + laneEntropy + posEntropy
+
+        return plantLogProb, laneLogProb, posLogProb, entropy, values    
     
 class RolloutBuffer:
     def __init__(self):
         self.grid_states = []
         self.context_states = []
+
         self.plant_actions = []
         self.grid_actions = []
+        self.pos_actions = []
+        
         self.plant_log_probs = []
         self.grid_log_probs = []
+        self.pos_log_probs = []
+        
         self.rewards = []
         self.values = []
         self.dones = []
     
-    def add(self, grid_state, context_state, plant_action, grid_action, plant_log_prob, grid_log_prob, reward, value, done):
+    def add(self, grid_state, context_state, plant_action, grid_action, pos_action, plant_log_prob, grid_log_prob, pos_log_probs, reward, value, done):
         self.grid_states.append(grid_state)
         self.context_states.append(context_state)
+
         self.plant_actions.append(plant_action)
         self.grid_actions.append(grid_action)
+        self.pos_actions.append(pos_action)
+
         self.plant_log_probs.append(plant_log_prob)
         self.grid_log_probs.append(grid_log_prob)
+        self.pos_log_probs.append(pos_log_probs)
         self.rewards.append(reward)
         self.values.append(value)
         self.dones.append(done)
@@ -186,8 +228,10 @@ class RolloutBuffer:
             "context_states": np.array(self.context_states),
             'plant_actions': np.array(self.plant_actions),
             'grid_actions': np.array(self.grid_actions),
+            'pos_actions': np.array(self.pos_actions),
             'plant_log_probs': np.array(self.plant_log_probs),
             'grid_log_probs': np.array(self.grid_log_probs),
+            'pos_log_probs': np.array(self.pos_log_probs),
             'rewards': np.array(self.rewards),
             'values': np.array(self.values),
             'dones': np.array(self.dones)
@@ -198,8 +242,10 @@ class RolloutBuffer:
         self.context_states.clear
         self.plant_actions.clear()
         self.grid_actions.clear()
+        self.pos_actions.clear()
         self.plant_log_probs.clear()
         self.grid_log_probs.clear()
+        self.pos_log_probs.clear()
         self.rewards.clear()
         self.values.clear()
         self.dones.clear()
@@ -217,10 +263,6 @@ class RolloutBuffer:
     
 class PPOAgent:
     def __init__(self,
-                grid_h=5, 
-                grid_w=9, 
-                n_plants=9, 
-                n_zoms=5, 
                 lr=3e-4, 
                 gamma=0.99, 
                 gae_lamb=0.99, 
@@ -243,32 +285,41 @@ class PPOAgent:
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.policy = ActorCritic().to(self.device)
+        self.policy = ActorCritic(5, 4, 5).to(self.device)
         self.optimizer = optim.Adam(self.policy.parameters(), lr=lr)
 
         self.buffer = RolloutBuffer()
 
-    def select_action(self, state, gridMask=None):
-        grid_state, context_state = state
+    def select_action(self, grid_state, context_state, gridMask, inference_mode=False):
         grid_state = torch.FloatTensor(grid_state).to(self.device)
         context_state = torch.FloatTensor(context_state).to(self.device)
-        with torch.no_grad():
-            plant_action, grid_action, plant_log_prob, grid_log_prob, value = self.policy.get_action([grid_state.unsqueeze(0), context_state.unsqueeze(0)], gridMask)
 
+        if inference_mode:
+            with torch.no_grad():
+                plantAction, laneAction, posAction, value = self.policy.inference_action(grid_state.unsqueeze(0), context_state.unsqueeze(0), gridMask)
+                return plantAction.item(), laneAction.item(), posAction.item()
+  
+        with torch.no_grad():
+            plantAction, laneAction, posAction, plantLogProb, laneLogProb, posLogProb, value = self.policy.get_action(grid_state.unsqueeze(0), context_state.unsqueeze(0), gridMask)
+  
         self.buffer.add(
             grid_state.cpu().numpy(),
             context_state.cpu().numpy(),
-            plant_action.cpu().numpy()[0],
-            grid_action.cpu().numpy()[0],
-            plant_log_prob.cpu().numpy()[0],
-            grid_log_prob.cpu().numpy()[0],
+
+            plantAction.cpu().numpy()[0],
+            laneAction.cpu().numpy()[0],
+            posAction.cpu().numpy()[0],
+
+            plantLogProb.cpu().numpy()[0],
+            laneLogProb.cpu().numpy()[0],
+            posLogProb.cpu().numpy()[0],
+
             0,
             value.cpu().numpy()[0][0],
             False
 
         )
-
-        return plant_action.item(), grid_action.item()
+        return plantAction.item(), laneAction.item(), posAction.item()
     
     def store_reward_and_done(self, reward, done):
         if len(self.buffer) > 0:
@@ -294,7 +345,7 @@ class PPOAgent:
         
         return advantages, returns
     
-    def update(self, next_state=None, saveBuffer=True):
+    def update(self, next_state=None):
         data = self.buffer.get()
 
         if next_state is not None:
@@ -312,49 +363,78 @@ class PPOAgent:
 
         grid_states = torch.FloatTensor(grid_states).to(self.device)
         context_states = torch.FloatTensor(context_states).to(self.device)
+
         plant_actions = torch.LongTensor(data["plant_actions"]).to(self.device)
         grid_actions = torch.LongTensor(data["grid_actions"]).to(self.device)
+        pos_actions = torch.LongTensor(data["pos_actions"]).to(self.device)
+
         old_plant_log_probs = torch.LongTensor(data["plant_log_probs"]).to(self.device)
         old_grid_log_probs = torch.LongTensor(data["grid_log_probs"]).to(self.device)
+        old_pos_log_probs = torch.LongTensor(data["pos_log_probs"]).to(self.device)
+
         advantages_tensor = torch.FloatTensor(advantages).to(self.device)
         returns_tensor = torch.FloatTensor(returns).to(self.device)
+
+        advantages_tensor = (advantages_tensor - advantages_tensor.mean()) / (advantages_tensor.std() + 1e-8)
 
         total_policy_loss = 0
         total_value_loss = 0
         total_entropy = 0
         num_updates = 0
 
-        for i in range(self.ppo_epochs):
+        for _ in range(self.ppo_epochs):
             indices = np.arange(len(data["grid_states"]))
             np.random.shuffle(indices)
 
             for start in range(0, len(indices), self.mini_batch_size):
                 end = start + self.mini_batch_size
                 batch_indices = indices[start:end]
+                
+                # Rollout
+                # States
+                batch_grid_states = grid_states[batch_indices]
+                batch_context_states = context_states[batch_indices]
 
-                batch_states = [grid_states[batch_indices], context_states[batch_indices]]
-
+                # Actions
                 batch_plant_actions = plant_actions[batch_indices]
                 batch_grid_actions = grid_actions[batch_indices]
+                batch_pos_actions = pos_actions[batch_indices]
+                
+                # Action Probs
                 batch_old_plant_log_probs = old_plant_log_probs[batch_indices]
                 batch_old_grid_log_probs = old_grid_log_probs[batch_indices]
+                batch_old_pos_log_probs = old_pos_log_probs[batch_indices]
+
+                # Adv + Returns
                 batch_advantages = advantages_tensor[batch_indices]
                 batch_returns = returns_tensor[batch_indices]
 
-                new_plant_log_probs, new_grid_log_probs, entropy, values = self.policy.evaluate_actions(batch_states, batch_plant_actions, batch_grid_actions)
-                batch_advantages = (batch_advantages - batch_advantages.mean()) / (batch_advantages.std() + 1e-8)
-                ratio_plant = torch.exp(new_plant_log_probs - batch_old_plant_log_probs)
-                ratio_grid = torch.exp(new_grid_log_probs - batch_old_grid_log_probs)
+                newPlantLogProb, newLaneLogProb, newPosLogProb, entropy, values = self.policy.evaluate_actions(batch_grid_states, batch_context_states, batch_plant_actions, batch_grid_actions, batch_pos_actions)
+                
+                
+                # Ratio
+                ratio_plant = torch.exp(newPlantLogProb - batch_old_plant_log_probs)
+                ratio_lane = torch.exp(newLaneLogProb - batch_old_grid_log_probs)
+                ratio_pos = torch.exp(newPosLogProb - batch_old_pos_log_probs)
 
+
+                # PPO Plant
                 surr1_plant = ratio_plant * batch_advantages
                 surr2_plant = torch.clamp(ratio_plant, 1 - self.eps, 1 + self.eps) * batch_advantages
                 policy_loss_plant = -torch.min(surr1_plant, surr2_plant).mean()
 
-                surr1_grid = ratio_grid * batch_advantages
-                surr2_grid = torch.clamp(ratio_grid, 1 - self.eps, 1 + self.eps) * batch_advantages
-                policy_loss_grid = -torch.min(surr1_grid, surr2_grid).mean()
+                # PPO Lane
+                surr1_lane = ratio_lane * batch_advantages
+                surr2_lane = torch.clamp(ratio_lane, 1 - self.eps, 1 + self.eps) * batch_advantages
+                policy_loss_lane = -torch.min(surr1_lane, surr2_lane).mean()
 
-                policy_loss = policy_loss_plant + policy_loss_grid
+                # PPO Position
+                surr1_pos = ratio_pos * batch_advantages
+                surr2_pos = torch.clamp(ratio_pos, 1 - self.eps, 1 + self.eps) * batch_advantages
+                policy_loss_pos = -torch.min(surr1_pos, surr2_pos).mean()
+
+
+                policy_loss = policy_loss_plant + policy_loss_lane + policy_loss_pos
                 value_loss = F.mse_loss(values.squeeze(), batch_returns)
                 entropy_loss = -entropy.mean()
 
